@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluesky Notification Manager</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/styles.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <!-- Login Form -->
+        <div id="loginSection" class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Login</h5>
+                <form id="loginForm">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" required autocomplete="username">
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" required autocomplete="current-password">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Content (hidden until logged in) -->
+        <div id="mainContent" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Bluesky Notification Manager</h2>
+                <button id="logoutBtn" class="btn btn-outline-danger">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </button>
+            </div>
+
+            <!-- Add Account Form -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Add Account to Monitor</h5>
+                    <form id="addAccountForm">
+                        <div class="mb-3">
+                            <label for="handle" class="form-label">Bluesky Handle</label>
+                            <div class="input-group">
+                                <span class="input-group-text">@</span>
+                                <input type="text" class="form-control" id="handle" required placeholder="username.bsky.social">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="desktopNotif" checked>
+                                <label class="form-check-label" for="desktopNotif">
+                                    <i class="bi bi-laptop"></i> Desktop Notifications
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="emailNotif">
+                                <label class="form-check-label" for="emailNotif">
+                                    <i class="bi bi-envelope"></i> Email Notifications
+                                </label>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-circle"></i> Add Account
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Monitored Accounts -->
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Monitored Accounts</h5>
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Account</th>
+                                    <th>Status</th>
+                                    <th>Desktop Notifications</th>
+                                    <th>Email Notifications</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="accountsTable">
+                                <!-- Accounts will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast for notifications -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong class="me-auto">Notification</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
