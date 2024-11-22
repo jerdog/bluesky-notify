@@ -1,21 +1,15 @@
 # Environment and dependencies
+ENV/
+env/
+
+# Virtual Environment
 venv/
-.env
-*.env
-.env.local
-.env.*.local
 
 # Database
 *.db
-*.sqlite
-*.sqlite3
-bluesky_notify.db
 
 # Logs
 *.log
-bluesky_notify.log
-logs/
-*.log.*
 
 # IDE specific files
 .vscode/
@@ -50,10 +44,9 @@ wheels/
 .coverage
 htmlcov/
 .pytest_cache/
-.tox/
-.coverage.*
-coverage.xml
-*.cover
+
+# Documentation
+docs/_build/
 
 # Temporary files
 *.tmp
@@ -64,3 +57,4 @@ coverage.xml
 # Project specific
 instance/
 .webassets-cache
+.env
