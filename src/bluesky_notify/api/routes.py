@@ -10,6 +10,7 @@ from ..core.logger import get_logger
 import asyncio
 import threading
 import os
+from datetime import datetime
 
 # Get logger for API
 logger = get_logger('api')
@@ -144,6 +145,14 @@ def toggle_account(handle):
 def index():
     """Serve the main page."""
     return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Docker container."""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat()
+    }), 200
 
 # Register blueprints
 app.register_blueprint(bp, url_prefix='/api')
