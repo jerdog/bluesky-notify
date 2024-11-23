@@ -178,31 +178,6 @@ logger.error("Error message")
   └── bluesky_notify.log.2
   ```
 
-### Running Tests
-
-```bash
-pytest
-```
-
-With coverage:
-```bash
-pytest --cov=bluesky_notify
-```
-
-### Code Style
-
-This project uses:
-- Black for code formatting
-- Flake8 for style enforcement
-- isort for import sorting
-
-Format code before committing:
-```bash
-black src/bluesky_notify tests
-isort src/bluesky_notify tests
-flake8 src/bluesky_notify tests
-```
-
 ## Notification System
 
 The application uses native notification systems for each platform:
@@ -257,12 +232,6 @@ The application uses native notification systems for each platform:
 2. Create a feature branch
 3. Make your changes
 4. Submit a pull request
-
-Please ensure your code:
-- Follows our code style (Black + Flake8)
-- Includes appropriate tests
-- Updates documentation as needed
-- Uses proper logging practices
 
 ## License
 
