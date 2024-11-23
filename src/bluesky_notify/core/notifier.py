@@ -26,7 +26,7 @@ class BlueSkyNotifier:
     """Main notification manager for Bluesky posts.
     
     This class handles the monitoring of Bluesky accounts and sends notifications
-    for new posts using macOS notifications.
+    for new posts using macOS notifications and email.
     
     Attributes:
         app: Flask application instance
@@ -101,6 +101,60 @@ class BlueSkyNotifier:
             
         Raises:
             Exception: If email sending fails
+        """
+        try:
+            import requests
+
+            # Get Mailgun configuration
+            api_key = os.getenv('MAILGUN_API_KEY')
+            domain = os.getenv('MAILGUN_DOMAIN')
+            from_email = os.getenv('MAILGUN_FROM_EMAIL')
+            to_email = os.getenv('MAILGUN_TO_EMAIL')
+
+            if not all([api_key, domain, from_email, to_email]):
+                logger.debug("Mailgun configuration not complete, skipping email notification")
+                return False
+
+            # Create HTML body with clickable link
+            html = f"""
+            <html>
+              <body>
+                <p>{message}</p>
+                <p><a href="{url}">View Post</a></p>
+              </body>
+            </html>
+            """
+
+            # Send email using Mailgun API
+            response = requests.post(
+                f"https://api.mailgun.net/v3/{domain}/messages",
+                auth=("api", api_key),
+                data={
+                    "from": from_email,
+                    "to": to_email,
+                    "subject": title,
+                    "html": html
+                }
+            )
+            response.raise_for_status()
+
+            logger.info(f"Email notification sent via Mailgun: {title}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error sending email notification via Mailgun: {str(e)}")
+            return False
+
+    def _send_email(self, title: str, message: str, url: str) -> bool:
+        """Send an email notification using Mailgun.
+        
+        Args:
+            title: The email subject
+            message: The email body
+            url: The URL to the post
+            
+        Returns:
+            bool: True if email was sent successfully, False otherwise
         """
         try:
             import requests
@@ -226,7 +280,7 @@ class BlueSkyNotifier:
         
         Args:
             handle: Bluesky handle to add
-            notification_preferences: Optional notification preferences (desktop, mobile)
+            notification_preferences: Optional notification preferences (desktop, email)
             
         Returns:
             dict: Result data (success, error)
@@ -279,7 +333,7 @@ class BlueSkyNotifier:
         
         Args:
             handle: Bluesky handle to update preferences for
-            preferences: Notification preferences (desktop, mobile)
+            preferences: Notification preferences (desktop, email)
             
         Returns:
             dict: Result data (success, error)
@@ -341,11 +395,20 @@ class BlueSkyNotifier:
                         continue
 
                     try:
+<<<<<<< HEAD
                         # Check if we've already notified about this post
                         if NotifiedPost.query.filter_by(
                             account_did=account.did,
                             post_id=post_id
                         ).first():
+=======
+                        existing_notification = NotifiedPost.query.filter_by(
+                            account_did=account.did,
+                            post_id=post_id
+                        ).first()
+                        
+                        if existing_notification:
+>>>>>>> e26fee5ba4f6c7eca37231108d5db654fd011591
                             continue
 
                         # Get post timestamp
@@ -360,7 +423,11 @@ class BlueSkyNotifier:
                         # Mark as notified before sending notifications to prevent duplicates
                         mark_post_notified(account.did, post_id)
 
+<<<<<<< HEAD
                         # Get post details
+=======
+                        # Send notifications based on preferences
+>>>>>>> e26fee5ba4f6c7eca37231108d5db654fd011591
                         text = post.get("post", {}).get("record", {}).get("text", "")
                         post_uri = post.get("post", {}).get("uri", "")
                         
@@ -370,7 +437,10 @@ class BlueSkyNotifier:
                                 _, _, _, _, post_rkey = post_uri.split("/")
                                 web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
                                 
+<<<<<<< HEAD
                                 # Send notifications based on preferences
+=======
+>>>>>>> e26fee5ba4f6c7eca37231108d5db654fd011591
                                 for pref in account.notification_preferences:
                                     if not pref.enabled:
                                         continue
