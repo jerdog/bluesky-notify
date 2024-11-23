@@ -88,6 +88,63 @@ class BlueSkyNotifier:
             logger.error(f"Unexpected error sending notification: {str(e)}")
             return False
 
+    def _send_email(self, title: str, message: str, url: str) -> bool:
+        """Send an email notification using Mailgun.
+        
+        Args:
+            title: The email subject
+            message: The email body
+            url: The URL to include in the email
+            
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+            
+        Raises:
+            Exception: If email sending fails
+        """
+        try:
+            import requests
+
+            # Get Mailgun configuration
+            api_key = os.getenv('MAILGUN_API_KEY')
+            domain = os.getenv('MAILGUN_DOMAIN')
+            from_email = os.getenv('MAILGUN_FROM_EMAIL')
+            to_email = os.getenv('MAILGUN_TO_EMAIL')
+
+            if not all([api_key, domain, from_email, to_email]):
+                logger.debug("Mailgun configuration not complete, skipping email notification")
+                return False
+
+            # Create HTML body with clickable link
+            html = f"""
+            <html>
+              <body>
+                <p>{message}</p>
+                <p><a href="{url}">View Post</a></p>
+              </body>
+            </html>
+            """
+
+            # Send email using Mailgun API
+            response = requests.post(
+                f"https://api.mailgun.net/v3/{domain}/messages",
+                auth=("api", api_key),
+                data={
+                    "from": from_email,
+                    "to": to_email,
+                    "subject": title,
+                    "html": html
+                }
+            )
+            response.raise_for_status()
+
+            logger.info(f"Email notification sent via Mailgun: {title}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error sending email notification via Mailgun: {str(e)}")
+            return False
+
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5)
     async def _make_request(self, endpoint: str, params: dict = None) -> dict:
         """Make a request to the BlueSky API with retry logic.
@@ -283,50 +340,61 @@ class BlueSkyNotifier:
                     if not post_id:
                         continue
 
-                    # Check if we've already notified about this post
-                    if NotifiedPost.query.filter_by(
-                        account_did=account.did,
-                        post_id=post_id
-                    ).first():
-                        continue
-
-                    # Get post timestamp
-                    post_time = datetime.fromisoformat(
-                        post.get("post", {}).get("indexedAt", "").replace("Z", "+00:00")
-                    )
-
-                    # Skip if post is older than last check
-                    if last_check and post_time <= last_check:
-                        continue
-
-                    # Send notifications based on preferences
-                    text = post.get("post", {}).get("record", {}).get("text", "")
-                    post_uri = post.get("post", {}).get("uri", "")
-                    
-                    # Convert URI to web URL
-                    # Format: at://did:plc:XXX/app.bsky.feed.post/YYY -> https://bsky.app/profile/handle/post/YYY
-                    if post_uri:
-                        try:
-                            _, _, _, _, post_rkey = post_uri.split("/")
-                            web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
-                            
-                            for pref in account.notification_preferences:
-                                if not pref.enabled:
-                                    continue
-
-                                if pref.type == "desktop":
-                                    self._send_notification(
-                                        title=f"New post from {account.display_name or account.handle}",
-                                        message=text[:200] + ("..." if len(text) > 200 else ""),
-                                        url=web_url
-                                    )
-
-                        except ValueError:
-                            logger.error(f"Invalid post URI format: {post_uri}")
+                    try:
+                        # Check if we've already notified about this post
+                        if NotifiedPost.query.filter_by(
+                            account_did=account.did,
+                            post_id=post_id
+                        ).first():
                             continue
 
-                    # Mark as notified
-                    mark_post_notified(account.did, post_id)
+                        # Get post timestamp
+                        post_time = datetime.fromisoformat(
+                            post.get("post", {}).get("indexedAt", "").replace("Z", "+00:00")
+                        )
+
+                        # Skip if post is older than last check
+                        if last_check and post_time <= last_check:
+                            continue
+
+                        # Mark as notified before sending notifications to prevent duplicates
+                        mark_post_notified(account.did, post_id)
+
+                        # Get post details
+                        text = post.get("post", {}).get("record", {}).get("text", "")
+                        post_uri = post.get("post", {}).get("uri", "")
+                        
+                        # Convert URI to web URL
+                        if post_uri:
+                            try:
+                                _, _, _, _, post_rkey = post_uri.split("/")
+                                web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
+                                
+                                # Send notifications based on preferences
+                                for pref in account.notification_preferences:
+                                    if not pref.enabled:
+                                        continue
+
+                                    if pref.type == "desktop":
+                                        self._send_notification(
+                                            title=f"New post from {account.display_name or account.handle}",
+                                            message=text[:200] + ("..." if len(text) > 200 else ""),
+                                            url=web_url
+                                        )
+                                    elif pref.type == "email":
+                                        self._send_email(
+                                            title=f"New post from {account.display_name or account.handle}",
+                                            message=text,
+                                            url=web_url
+                                        )
+
+                            except ValueError:
+                                logger.error(f"Invalid post URI format: {post_uri}")
+                                continue
+
+                    except Exception as e:
+                        logger.error(f"Error processing post {post_id}: {str(e)}")
+                        continue
 
         except Exception as e:
             logger.error(f"Error checking posts for {account.handle}: {str(e)}")
