@@ -26,7 +26,7 @@ class BlueSkyNotifier:
     """Main notification manager for Bluesky posts.
     
     This class handles the monitoring of Bluesky accounts and sends notifications
-    for new posts using macOS notifications.
+    for new posts using macOS notifications and email.
     
     Attributes:
         app: Flask application instance
@@ -74,6 +74,64 @@ class BlueSkyNotifier:
             return True
         except Exception as e:
             logger.error(f"Error sending notification: {str(e)}")
+            return False
+
+    def _send_email(self, title: str, message: str, url: str) -> bool:
+        """Send an email notification.
+        
+        Args:
+            title: The email subject
+            message: The email body
+            url: The URL to the post
+            
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            from flask import current_app
+
+            # Get email configuration
+            sender_email = os.getenv('EMAIL_ADDRESS')
+            sender_password = os.getenv('EMAIL_PASSWORD')
+            recipient_email = os.getenv('EMAIL_ADDRESS')  # Send to same address
+            smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+            smtp_port = int(os.getenv('SMTP_PORT', '587'))
+
+            if not all([sender_email, sender_password, recipient_email]):
+                logger.error("Missing email configuration")
+                return False
+
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['To'] = recipient_email
+            msg['Subject'] = title
+
+            # Create HTML body with clickable link
+            html = f"""
+            <html>
+              <body>
+                <p>{message}</p>
+                <p><a href="{url}">View Post</a></p>
+              </body>
+            </html>
+            """
+            msg.attach(MIMEText(html, 'html'))
+
+            # Send email
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+
+            logger.info(f"Email notification sent: {title}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error sending email notification: {str(e)}")
             return False
 
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5)
@@ -157,7 +215,7 @@ class BlueSkyNotifier:
         
         Args:
             handle: Bluesky handle to add
-            notification_preferences: Optional notification preferences (desktop, mobile)
+            notification_preferences: Optional notification preferences (desktop, email)
             
         Returns:
             dict: Result data (success, error)
@@ -210,7 +268,7 @@ class BlueSkyNotifier:
         
         Args:
             handle: Bluesky handle to update preferences for
-            preferences: Notification preferences (desktop, mobile)
+            preferences: Notification preferences (desktop, email)
             
         Returns:
             dict: Result data (success, error)
@@ -306,6 +364,12 @@ class BlueSkyNotifier:
                                     self._send_notification(
                                         title=f"New post from {account.display_name or account.handle}",
                                         message=text[:200] + ("..." if len(text) > 200 else ""),
+                                        url=web_url
+                                    )
+                                elif pref.type == "email":
+                                    self._send_email(
+                                        title=f"New post from {account.display_name or account.handle}",
+                                        message=text,
                                         url=web_url
                                     )
 
