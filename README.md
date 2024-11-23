@@ -70,6 +70,12 @@ BLUESKY_PASSWORD=your-password
 # Logging
 LOG_LEVEL=INFO
 LOG_FILE=bluesky_notify.log
+
+# Email Configuration
+EMAIL_ADDRESS=your_email@example.com
+EMAIL_PASSWORD=your_email_app_password  # For Gmail, use App Password
+SMTP_SERVER=smtp.gmail.com  # Optional, defaults to Gmail
+SMTP_PORT=587              # Optional, defaults to 587
 ```
 
 6. Initialize the database:
@@ -203,6 +209,55 @@ The application uses native notification systems for each platform:
 ### Fallback
 - For unsupported platforms, falls back to console output
 - Displays post information and URLs in the terminal
+
+### Email Notifications
+
+The application supports email notifications for new posts. To set up email notifications:
+
+1. Configure your email settings in `.env`:
+```ini
+# Email Configuration
+EMAIL_ADDRESS=your_email@example.com
+EMAIL_PASSWORD=your_email_app_password  # For Gmail, use App Password
+SMTP_SERVER=smtp.gmail.com  # Optional, defaults to Gmail
+SMTP_PORT=587              # Optional, defaults to 587
+```
+
+2. If using Gmail:
+   - Enable 2-Step Verification in your Google Account
+   - Generate an App Password:
+     1. Go to Google Account settings
+     2. Navigate to Security > 2-Step Verification > App passwords
+     3. Create a new App Password for "Bluesky Notify"
+     4. Copy the generated password to your `.env` file
+
+3. Enable email notifications for accounts:
+   - Via CLI: `bluesky-notify update username.bsky.social --email`
+   - Via Web UI: Toggle the email switch in the accounts dashboard
+
+Email notifications include:
+- Full post content
+- Clickable link to view the post
+- Sender name and handle
+- HTML formatting for better readability
+
+### Notification Preferences
+
+You can enable multiple notification methods per account:
+- Desktop notifications (native system notifications)
+- Email notifications (HTML emails with post content)
+
+Set preferences using:
+```bash
+# Enable both desktop and email
+bluesky-notify update username.bsky.social --desktop --email
+
+# Enable only email
+bluesky-notify update username.bsky.social --no-desktop --email
+
+# Enable only desktop
+bluesky-notify update username.bsky.social --desktop --no-email
+```
 
 ## Troubleshooting
 
