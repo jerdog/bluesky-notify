@@ -15,31 +15,15 @@ A cross-platform desktop application to monitor and track notifications from mul
   - Command-line interface for automation
 - **Secure Authentication**: Safe credential storage and handling
 - **Cross-Platform**: Works on macOS, Linux, and Windows
-
-## Project Structure
-```
-bluesky-notify/
-├── src/                      # Main application source code
-│   └── bluesky_notify/      # Main package directory
-│       ├── api/             # API endpoints
-│       ├── core/            # Core business logic
-│       │   └── logger.py    # Centralized logging
-│       ├── cli/             # CLI commands
-│       ├── static/          # Static assets
-│       └── templates/       # HTML templates
-├── tests/                   # Test files
-├── config/                  # Configuration files
-├── docs/                    # Documentation
-├── logs/                    # Application logs
-├── requirements/            # Dependency files
-│   ├── base.txt            # Base dependencies
-│   └── dev.txt             # Development dependencies
-├── .env                     # Environment variables
-└── run.py                  # Application entry point
-```
+- **Real-time Notifications**: Click-to-open notifications that take you directly to posts
+- **SQLite Database**: Reliable notification tracking
 
 ## Prerequisites
 - Python 3.8+
+- Platform-specific requirements:
+  - **macOS**: terminal-notifier (`brew install terminal-notifier`)
+  - **Linux**: notify-send (usually pre-installed, otherwise `sudo apt-get install libnotify-bin`)
+  - **Windows**: No additional requirements (uses built-in Toast Notifications)
 - Bluesky account credentials
 - Internet connection
 - Modern web browser (for web interface)
@@ -218,6 +202,32 @@ black src/bluesky_notify tests
 isort src/bluesky_notify tests
 flake8 src/bluesky_notify tests
 ```
+
+## Notification System
+
+The application uses native notification systems for each platform:
+
+### macOS
+- Uses terminal-notifier for native macOS notifications
+- Click notifications to open posts in your default browser
+- Notifications are grouped under "Bluesky Notify"
+- Includes sound notifications
+
+### Linux
+- Uses notify-send for native Linux desktop notifications
+- Creates a desktop entry for handling notification clicks
+- Click notifications to open posts in your default browser
+- Supports most Linux desktop environments
+
+### Windows
+- Uses Windows Toast Notifications
+- Interactive notifications with "Open Post" button
+- Native Windows 10/11 notification styling
+- Click notifications to open posts in your default browser
+
+### Fallback
+- For unsupported platforms, falls back to console output
+- Displays post information and URLs in the terminal
 
 ## Troubleshooting
 

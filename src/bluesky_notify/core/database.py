@@ -136,9 +136,23 @@ def remove_monitored_account(handle):
 def mark_post_notified(account_did, post_id):
     """Mark a post as having been notified about."""
     try:
-        notified = NotifiedPost(
+        # Check if post is already marked as notified
+        existing = NotifiedPost.query.filter_by(
             account_did=account_did,
             post_id=post_id
+        ).first()
+
+        if existing:
+            # Update the notification time if it exists
+            existing.notified_at = datetime.utcnow()
+            db.session.commit()
+            return True
+
+        # Create new notification record if it doesn't exist
+        notified = NotifiedPost(
+            account_did=account_did,
+            post_id=post_id,
+            notified_at=datetime.utcnow()
         )
         db.session.add(notified)
         db.session.commit()
