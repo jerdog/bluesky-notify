@@ -63,17 +63,29 @@ class BlueSkyNotifier:
             subprocess.CalledProcessError: If terminal-notifier command fails
         """
         try:
+            # Clean and truncate the message
+            # Remove quotes and escape special characters
+            clean_message = message.replace('"', "'").replace('[', r'\[').replace(']', r'\]')
+            # Truncate to a reasonable length to avoid issues
+            truncated_message = clean_message[:140] + "..." if len(clean_message) > 140 else clean_message
+            
+            # Clean the title similarly
+            clean_title = title.replace('"', "'").replace('[', r'\[').replace(']', r'\]')
+
             subprocess.run([
                 'terminal-notifier',
-                '-title', title,
-                '-message', message,
+                '-title', clean_title,
+                '-message', truncated_message,
                 '-open', url,
                 '-sound', 'default',
                 '-group', 'com.blueskynotify'
-            ], check=True)
+            ], check=True, capture_output=True, text=True)
             return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error sending notification: {str(e)}\nOutput: {e.stdout}\nError: {e.stderr}")
+            return False
         except Exception as e:
-            logger.error(f"Error sending notification: {str(e)}")
+            logger.error(f"Unexpected error sending notification: {str(e)}")
             return False
 
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5)
