@@ -133,33 +133,39 @@ def remove_monitored_account(handle):
         logger.error(f"Error removing monitored account: {str(e)}")
         return {"error": str(e)}
 
-def mark_post_notified(account_did, post_id):
-    """Mark a post as having been notified about."""
+def mark_post_notified(account_did: str, post_id: str) -> bool:
+    """Mark a post as having been notified about.
+    
+    Args:
+        account_did: The DID of the account
+        post_id: The ID of the post
+        
+    Returns:
+        bool: True if post was marked as notified, False if already notified
+    """
     try:
-        # Check if post is already marked as notified
+        # Check if already notified using SELECT FOR UPDATE to prevent race conditions
         existing = NotifiedPost.query.filter_by(
             account_did=account_did,
             post_id=post_id
-        ).first()
+        ).with_for_update().first()
 
         if existing:
-            # Update the notification time if it exists
-            existing.notified_at = datetime.utcnow()
-            db.session.commit()
-            return True
+            logger.debug(f"Post {post_id} already marked as notified for {account_did}")
+            return False
 
-        # Create new notification record if it doesn't exist
-        notified = NotifiedPost(
+        # Create new notification record
+        notification = NotifiedPost(
             account_did=account_did,
-            post_id=post_id,
-            notified_at=datetime.utcnow()
+            post_id=post_id
         )
-        db.session.add(notified)
+        db.session.add(notification)
         db.session.commit()
         return True
+
     except Exception as e:
+        logger.debug(f"Error marking post as notified (may be duplicate): {str(e)}")
         db.session.rollback()
-        logger.error(f"Error marking post as notified: {str(e)}")
         return False
 
 def init_db(app):

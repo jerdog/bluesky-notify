@@ -338,6 +338,7 @@ class BlueSkyNotifier:
                         continue
 
                     try:
+                        # Check if we've already notified about this post
                         existing_notification = NotifiedPost.query.filter_by(
                             account_did=account.did,
                             post_id=post_id
@@ -355,10 +356,7 @@ class BlueSkyNotifier:
                         if last_check and post_time <= last_check:
                             continue
 
-                        # Mark as notified before sending notifications to prevent duplicates
-                        mark_post_notified(account.did, post_id)
-
-                        # Send notifications based on preferences
+                        # Get post details
                         text = post.get("post", {}).get("record", {}).get("text", "")
                         post_uri = post.get("post", {}).get("uri", "")
                         
@@ -368,22 +366,34 @@ class BlueSkyNotifier:
                                 _, _, _, _, post_rkey = post_uri.split("/")
                                 web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
                                 
+                                # Send notifications based on preferences
+                                notifications_sent = False
                                 for pref in account.notification_preferences:
                                     if not pref.enabled:
                                         continue
 
-                                    if pref.type == "desktop":
-                                        self._send_notification(
-                                            title=f"New post from {account.display_name or account.handle}",
-                                            message=text[:200] + ("..." if len(text) > 200 else ""),
-                                            url=web_url
-                                        )
-                                    elif pref.type == "email":
-                                        self._send_email(
-                                            title=f"New post from {account.display_name or account.handle}",
-                                            message=text,
-                                            url=web_url
-                                        )
+                                    try:
+                                        if pref.type == "desktop":
+                                            desktop_sent = self._send_notification(
+                                                title=f"New post from {account.display_name or account.handle}",
+                                                message=text[:200] + ("..." if len(text) > 200 else ""),
+                                                url=web_url
+                                            )
+                                            notifications_sent = notifications_sent or desktop_sent
+                                        elif pref.type == "email":
+                                            email_sent = self._send_email(
+                                                title=f"New post from {account.display_name or account.handle}",
+                                                message=text,
+                                                url=web_url
+                                            )
+                                            notifications_sent = notifications_sent or email_sent
+                                    except Exception as e:
+                                        logger.error(f"Error sending {pref.type} notification: {str(e)}")
+                                        continue
+
+                                # Only mark as notified if at least one notification was sent successfully
+                                if notifications_sent:
+                                    mark_post_notified(account.did, post_id)
 
                             except ValueError:
                                 logger.error(f"Invalid post URI format: {post_uri}")
