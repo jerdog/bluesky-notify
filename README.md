@@ -62,20 +62,100 @@ A cross-platform notification system for tracking and receiving alerts about new
    LOG_FILE=bluesky_notify.log
    ```
 
-### Option 2: Docker Installation
+### Option 2: Container Installation
 
-1. Clone the repository as above
+Choose your preferred container runtime:
 
-2. Copy and configure the environment file:
+#### Docker
+
+1. Clone the repository and configure .env as described above
+
+2. Build and start with Docker Compose:
    ```bash
-   cp .env.example .env
-   # Edit .env with your settings
+   docker-compose up -d
    ```
 
-3. Build and start the container:
+3. View logs:
    ```bash
-   docker-compose up --build
+   docker-compose logs -f
    ```
+
+4. Stop the application:
+   ```bash
+   docker-compose down
+   ```
+
+#### Podman
+
+1. Clone the repository and configure .env as described above
+
+2. Build and start with Podman Compose:
+   ```bash
+   # Install podman-compose if needed
+   pip install podman-compose
+
+   # Start the application
+   podman-compose -f podman-compose.yml up -d
+   ```
+
+3. View logs:
+   ```bash
+   podman-compose logs -f
+   ```
+
+4. Stop the application:
+   ```bash
+   podman-compose down
+   ```
+
+#### Portainer
+
+1. Prerequisites:
+   - Running Portainer instance
+   - Container registry (if using private registry)
+   - Network named 'bluesky-network'
+   - Volumes 'bluesky_data' and 'bluesky_logs'
+
+2. Create the required volumes and network:
+   ```bash
+   # Create volumes
+   docker volume create bluesky_data
+   docker volume create bluesky_logs
+   
+   # Create network
+   docker network create bluesky-network
+   ```
+
+3. In Portainer:
+   - Go to Stacks → Add Stack
+   - Upload the portainer-stack.yml file
+   - Set environment variables:
+     - REGISTRY_URL: Your registry URL (optional)
+     - DOMAIN: Your domain (defaults to bluesky.localhost)
+   - Deploy the stack
+
+4. Monitor the stack through Portainer UI
+
+## Container Management Options
+
+### Docker Compose
+- Standard Docker container management
+- Suitable for local development and simple deployments
+- Uses local filesystem for data persistence
+
+### Podman
+- Daemonless container engine
+- Rootless containers by default
+- SELinux support with :Z volume flag
+- Compatible with Docker commands
+- Ideal for security-focused environments
+
+### Portainer
+- Web-based container management
+- Supports multiple environments
+- Built-in monitoring and logging
+- Easy deployment and updates
+- Suitable for production environments
 
 ## Usage
 
@@ -133,6 +213,8 @@ bluesky-notify/
 ├── .env               # Environment configuration
 ├── docker-compose.yml # Docker configuration
 ├── Dockerfile         # Docker build file
+├── podman-compose.yml # Podman configuration
+├── portainer-stack.yml # Portainer stack configuration
 └── requirements.txt   # Python dependencies
 ```
 

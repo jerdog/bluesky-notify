@@ -13,9 +13,8 @@ services:
     ports:
       - "5000:5000"
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.bluesky.rule=Host(`bluesky.localhost`)"
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "io.podman.annotations.autoremove=false"
+      - "io.podman.annotations.init=true"
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
       interval: 30s
