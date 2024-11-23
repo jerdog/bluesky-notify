@@ -9,6 +9,7 @@ venv/
 *.db
 
 # Logs
+logs/
 *.log
 
 # IDE specific files

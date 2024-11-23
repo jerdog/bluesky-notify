@@ -1,107 +1,69 @@
-// Add passive event listener support
+// Constants and Utilities
+const BSKY_BASE_URL = 'https://bsky.app/profile/';
+const API_BASE_URL = '/api';
+
+// Check if the browser supports passive event listeners
 let supportsPassive = false;
 try {
     window.addEventListener("test", null, Object.defineProperty({}, 'passive', {
-        get: function () { 
-            supportsPassive = true; 
-        } 
+        get: function () { supportsPassive = true; }
     }));
 } catch(e) {}
 
-// Force passive event listeners for touch events
+// Add passive event listeners for better scrolling performance
 document.addEventListener('touchstart', function(){}, supportsPassive ? {passive: true} : false);
 document.addEventListener('touchmove', function(){}, supportsPassive ? {passive: true} : false);
 document.addEventListener('wheel', function(){}, supportsPassive ? {passive: true} : false);
 
-const API_BASE_URL = '/api';
-let toast;
+// Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+    loadAccounts();
+    
+    // Add account form submission
+    const addAccountForm = document.getElementById('addAccountForm');
+    if (addAccountForm) {
+        addAccountForm.addEventListener('submit', handleAddAccount);
+    }
+});
 
-// Initialize Bootstrap toast
+// Toast notification handler
 function showNotification(message, type = 'success') {
     const toastEl = document.getElementById('toast');
     const toastBody = toastEl.querySelector('.toast-body');
+    const toastTitle = toastEl.querySelector('.toast-header strong');
+    
+    toastTitle.textContent = type.charAt(0).toUpperCase() + type.slice(1);
     toastBody.textContent = message;
-    toastEl.classList.remove('success', 'error');
-    toastEl.classList.add(type);
-    const bsToast = new bootstrap.Toast(toastEl);
-    bsToast.show();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    // Add event listeners
-    document.getElementById('loginForm').addEventListener('submit', handleLogin);
-    document.getElementById('logoutBtn').addEventListener('click', handleLogout);
-    document.getElementById('addAccountForm').addEventListener('submit', handleAddAccount);
     
-    // Check if user is already logged in
-    checkAuthStatus();
-});
-
-async function checkAuthStatus() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/accounts`, {
-            credentials: 'include'
-        });
-        
-        if (response.ok) {
-            showMainContent();
-            await loadAccounts();
-        } else {
-            showLoginForm();
-        }
-    } catch (error) {
-        showLoginForm();
-    }
+    const toast = new bootstrap.Toast(toastEl);
+    toast.show();
 }
 
-async function handleLogin(event) {
-    event.preventDefault();
-    
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/login`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            credentials: 'include',
-            body: JSON.stringify({ username, password })
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            showNotification('Login successful', 'success');
-            showMainContent();
-            await loadAccounts();
-        } else {
-            showNotification(data.error || 'Login failed', 'error');
-        }
-    } catch (error) {
-        showNotification('Login failed', 'error');
-    }
-}
-
-async function handleLogout() {
-    try {
-        await fetch(`${API_BASE_URL}/logout`, {
-            method: 'POST',
-            credentials: 'include'
-        });
-        showLoginForm();
-    } catch (error) {
-        showNotification('Logout failed', 'error');
-    }
-}
-
+// Handle adding a new account
 async function handleAddAccount(event) {
     event.preventDefault();
     
-    const handle = document.getElementById('handle').value;
-    const desktop = document.getElementById('desktopNotif').checked;
-    const email = document.getElementById('emailNotif').checked;
+    let handle = document.getElementById('handle').value.trim();
+    const desktopNotif = document.getElementById('desktopNotif').checked;
+    const emailNotif = document.getElementById('emailNotif').checked;
+
+    // Remove @ if present
+    if (handle.startsWith('@')) {
+        handle = handle.substring(1);
+    }
+
+    // Basic handle validation
+    if (!handle) {
+        showNotification('Please enter a Bluesky handle', 'error');
+        return;
+    }
+
+    // Validate handle format (alphanumeric, dots, and hyphens allowed)
+    const handleRegex = /^[a-zA-Z0-9.-]+$/;
+    if (!handleRegex.test(handle)) {
+        showNotification('Invalid handle format. Only letters, numbers, dots, and hyphens are allowed', 'error');
+        return;
+    }
     
     try {
         const response = await fetch(`${API_BASE_URL}/accounts`, {
@@ -112,137 +74,120 @@ async function handleAddAccount(event) {
             body: JSON.stringify({
                 handle,
                 notification_preferences: {
-                    desktop,
-                    email
+                    desktop: desktopNotif,
+                    email: emailNotif
                 }
             })
         });
-        
+
         const data = await response.json();
         
-        if (response.ok) {
-            showNotification('Account added successfully', 'success');
-            document.getElementById('addAccountForm').reset();
-            await loadAccounts();
-        } else {
-            showNotification(data.error || 'Failed to add account', 'error');
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to add account');
         }
+
+        document.getElementById('handle').value = '';
+        await loadAccounts();
+        showNotification('Account added successfully');
     } catch (error) {
-        showNotification('Failed to add account', 'error');
+        console.error('Error adding account:', error);
+        showNotification(error.message || 'Failed to add account', 'error');
     }
 }
 
+// Load and display accounts
 async function loadAccounts() {
     try {
         const response = await fetch(`${API_BASE_URL}/accounts`);
         const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load accounts');
+        }
+        
+        const accounts = data?.data?.accounts || [];
         const accountsTable = document.getElementById('accountsTable');
         accountsTable.innerHTML = '';
-
-        if (data.success && data.accounts) {
-            data.accounts.forEach(account => {
-                const handle = account.handle.startsWith('@') ? account.handle.substring(1) : account.handle;
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>
-                        <div class="d-flex align-items-center">
-                            <img src="${account.avatar_url || 'https://i.imgur.com/8ZZE4Sa.png'}" 
-                                 alt="@${handle}'s avatar"
-                                 class="rounded-circle me-2"
-                                 width="40" height="40"
-                                 onerror="this.src='https://i.imgur.com/8ZZE4Sa.png'">
-                            <div>
-                                <div class="fw-bold">${account.display_name || handle}</div>
-                                <a href="https://bsky.app/profile/${handle}" 
-                                   target="_blank" 
-                                   rel="noopener noreferrer" 
-                                   class="text-muted text-decoration-none">
-                                    @${handle}
-                                </a>
-                            </div>
-                        </div>
+        
+        if (accounts.length === 0) {
+            accountsTable.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted">
+                        No accounts added yet. Add an account above to start monitoring.
                     </td>
-                    <td>
-                        <span class="badge ${account.is_active ? 'bg-success' : 'bg-danger'}">
-                            ${account.is_active ? 'Active' : 'Paused'}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input notification-toggle" type="checkbox" role="switch" 
-                                   id="desktop-${handle}" 
-                                   data-handle="${handle}"
-                                   data-type="desktop"
-                                   ${account.notification_preferences.desktop ? 'checked' : ''}>
-                            <label class="form-check-label" for="desktop-${handle}">
-                                <i class="bi bi-laptop"></i>
-                            </label>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input notification-toggle" type="checkbox" role="switch" 
-                                   id="email-${handle}"
-                                   data-handle="${handle}"
-                                   data-type="email"
-                                   ${account.notification_preferences.email ? 'checked' : ''}>
-                            <label class="form-check-label" for="email-${handle}">
-                                <i class="bi bi-envelope"></i>
-                            </label>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-${account.is_active ? 'warning' : 'success'}" onclick="toggleAccount('${handle}')">
-                                <i class="bi bi-${account.is_active ? 'pause-fill' : 'play-fill'}"></i>
-                                ${account.is_active ? 'Pause' : 'Resume'}
-                            </button>
-                            <button class="btn btn-danger" onclick="removeAccount('${handle}')">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                `;
-                accountsTable.appendChild(row);
-
-                // Add event listeners to the notification toggles
-                const desktopToggle = document.getElementById(`desktop-${handle}`);
-                const emailToggle = document.getElementById(`email-${handle}`);
-
-                desktopToggle.addEventListener('change', async (e) => {
-                    await toggleNotification(handle, 'desktop', e.target.checked);
-                });
-
-                emailToggle.addEventListener('change', async (e) => {
-                    await toggleNotification(handle, 'email', e.target.checked);
-                });
-            });
+                </tr>
+            `;
+            return;
         }
+        
+        accounts.forEach(account => {
+            const row = document.createElement('tr');
+            
+            // Account info cell
+            const accountCell = document.createElement('td');
+            accountCell.innerHTML = `
+                <div class="d-flex align-items-center">
+                    ${account.avatar_url ? `<img src="${account.avatar_url}" class="rounded-circle me-2" width="32" height="32" alt="${account.handle}'s avatar">` : ''}
+                    <div>
+                        <div class="fw-bold"><a href="${BSKY_BASE_URL}${account.handle}" target="_blank">${account.display_name || account.handle}</a></div>
+                        <div class="text-muted">@${account.handle}</div>
+                    </div>
+                </div>
+            `;
+            
+            // Status cell
+            const statusCell = document.createElement('td');
+            statusCell.innerHTML = `
+                <span class="badge ${account.is_active ? 'bg-success' : 'bg-secondary'}">
+                    ${account.is_active ? 'Active' : 'Inactive'}
+                </span>
+            `;
+            
+            // Desktop notifications cell
+            const desktopCell = document.createElement('td');
+            const desktopEnabled = account.notification_preferences?.desktop ?? false;
+            desktopCell.innerHTML = `
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" 
+                           ${desktopEnabled ? 'checked' : ''} 
+                           onchange="toggleNotification('${account.handle}', 'desktop', this.checked)">
+                </div>
+            `;
+            
+            // Email notifications cell
+            const emailCell = document.createElement('td');
+            const emailEnabled = account.notification_preferences?.email ?? false;
+            emailCell.innerHTML = `
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" 
+                           ${emailEnabled ? 'checked' : ''} 
+                           onchange="toggleNotification('${account.handle}', 'email', this.checked)">
+                </div>
+            `;
+            
+            // Actions cell
+            const actionsCell = document.createElement('td');
+            actionsCell.innerHTML = `
+                <button class="btn btn-sm btn-outline-danger" onclick="removeAccount('${account.did}')">
+                    <i class="bi bi-trash"></i>
+                </button>
+            `;
+            
+            row.appendChild(accountCell);
+            row.appendChild(statusCell);
+            row.appendChild(desktopCell);
+            row.appendChild(emailCell);
+            row.appendChild(actionsCell);
+            
+            accountsTable.appendChild(row);
+        });
     } catch (error) {
         console.error('Error loading accounts:', error);
-        showNotification('Error loading accounts', 'error');
+        showNotification('Failed to load accounts', 'error');
     }
 }
 
-async function toggleAccount(handle) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/accounts/${handle}/toggle`, {
-            method: 'POST'
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            showNotification(`Account ${data.is_active ? 'activated' : 'paused'} successfully`, 'success');
-            await loadAccounts();
-        } else {
-            showNotification(data.error || 'Failed to toggle account', 'error');
-        }
-    } catch (error) {
-        showNotification('Failed to toggle account', 'error');
-    }
-}
-
+// Toggle notification settings
 async function toggleNotification(handle, type, enabled) {
     try {
         const response = await fetch(`${API_BASE_URL}/accounts/${handle}/preferences`, {
@@ -251,57 +196,41 @@ async function toggleNotification(handle, type, enabled) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                desktop: type === 'desktop' ? enabled : document.getElementById(`desktop-${handle}`).checked,
-                email: type === 'email' ? enabled : document.getElementById(`email-${handle}`).checked
+                [type]: enabled
             })
         });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} notifications ${enabled ? 'enabled' : 'disabled'}`, 'success');
-        } else {
-            showNotification(data.error || `Failed to update ${type} notifications`, 'error');
-            // Revert the toggle if there was an error
-            document.getElementById(`${type}-${handle}`).checked = !enabled;
+
+        if (!response.ok) {
+            throw new Error('Failed to update notification settings');
         }
+
+        showNotification('Notification settings updated');
     } catch (error) {
-        console.error(`Error updating ${type} notifications:`, error);
-        showNotification(`Failed to update ${type} notifications`, 'error');
-        // Revert the toggle if there was an error
-        document.getElementById(`${type}-${handle}`).checked = !enabled;
+        console.error('Error updating notification settings:', error);
+        showNotification('Failed to update notification settings', 'error');
+        await loadAccounts(); // Reload to reset the UI state
     }
 }
 
-async function removeAccount(handle) {
-    if (!confirm(`Are you sure you want to remove ${handle}?`)) {
+// Remove an account
+async function removeAccount(did) {
+    if (!confirm('Are you sure you want to remove this account?')) {
         return;
     }
     
     try {
-        const response = await fetch(`${API_BASE_URL}/accounts/${handle}`, {
+        const response = await fetch(`${API_BASE_URL}/accounts/${did}`, {
             method: 'DELETE'
         });
-        
-        if (response.ok) {
-            showNotification('Account removed successfully', 'success');
-            await loadAccounts();
-        } else {
-            const data = await response.json();
-            showNotification(data.error || 'Failed to remove account', 'error');
+
+        if (!response.ok) {
+            throw new Error('Failed to remove account');
         }
+
+        await loadAccounts();
+        showNotification('Account removed successfully');
     } catch (error) {
+        console.error('Error removing account:', error);
         showNotification('Failed to remove account', 'error');
     }
-}
-
-function showMainContent() {
-    document.getElementById('loginSection').style.display = 'none';
-    document.getElementById('mainContent').style.display = 'block';
-}
-
-function showLoginForm() {
-    document.getElementById('loginSection').style.display = 'block';
-    document.getElementById('mainContent').style.display = 'none';
-    document.getElementById('loginForm').reset();
 }

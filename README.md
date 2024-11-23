@@ -16,6 +16,28 @@ A cross-platform desktop application to monitor and track notifications from mul
 - **Secure Authentication**: Safe credential storage and handling
 - **Cross-Platform**: Works on macOS, Linux, and Windows
 
+## Project Structure
+```
+bluesky-notify/
+├── src/                      # Main application source code
+│   └── bluesky_notify/      # Main package directory
+│       ├── api/             # API endpoints
+│       ├── core/            # Core business logic
+│       │   └── logger.py    # Centralized logging
+│       ├── cli/             # CLI commands
+│       ├── static/          # Static assets
+│       └── templates/       # HTML templates
+├── tests/                   # Test files
+├── config/                  # Configuration files
+├── docs/                    # Documentation
+├── logs/                    # Application logs
+├── requirements/            # Dependency files
+│   ├── base.txt            # Base dependencies
+│   └── dev.txt             # Development dependencies
+├── .env                     # Environment variables
+└── run.py                  # Application entry point
+```
+
 ## Prerequisites
 - Python 3.8+
 - Bluesky account credentials
@@ -36,25 +58,38 @@ python3 -m venv venv
 source venv/bin/activate  # On Windows: .\venv\Scripts\activate
 ```
 
-3. Install dependencies:
+3. Install development dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements/dev.txt
 ```
 
-4. Set up environment variables:
+4. Install the package in development mode:
+```bash
+pip install -e ".[dev]"
+```
+
+5. Set up environment variables:
 ```bash
 cp .env.example .env
 ```
 
-5. Edit `.env` with your Bluesky credentials:
+Edit `.env` with your configuration:
 ```ini
+# Core Settings
+DEBUG=True
+SECRET_KEY=your-secret-key
+
+# Bluesky API
 BLUESKY_USERNAME=your.username.bsky.social
 BLUESKY_PASSWORD=your-password
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=bluesky_notify.log
 ```
 
 6. Initialize the database:
 ```bash
-export FLASK_APP=app.py
 flask db upgrade
 ```
 
@@ -64,64 +99,39 @@ flask db upgrade
 
 1. Start the web server:
 ```bash
-python app.py
+python run.py
 ```
 
 2. Open your browser and navigate to `http://localhost:3001`
 
-3. Use the web interface to:
-- View all monitored accounts
-- Add new accounts to monitor
-- Enable/disable account monitoring
-- Remove accounts from monitoring
+The web interface provides:
+- Account management dashboard
+- Notification preferences
+- Monitoring status controls
+- Account status overview
 
 ### Command Line Interface
 
-The CLI provides quick access to all features:
+The CLI provides quick access to core features:
 
 ```bash
 # View available commands
-./cli.py --help
+bluesky-notify --help
 
 # Add an account to monitor
-./cli.py add username.bsky.social
+bluesky-notify add username.bsky.social
 
 # List monitored accounts
-./cli.py list
+bluesky-notify list
 
 # Toggle monitoring status
-./cli.py toggle username.bsky.social
+bluesky-notify toggle username.bsky.social
 
 # Remove an account
-./cli.py remove username.bsky.social
+bluesky-notify remove username.bsky.social
 
 # Start the notification service
-./cli.py start
-```
-
-## Architecture
-
-### Components
-- **Frontend**: Bootstrap 5.3.2, Vanilla JavaScript
-- **Backend**: Flask with SQLAlchemy ORM
-- **Database**: SQLite with Flask-Migrate for schema management
-- **Notifications**: desktop-notifier
-- **API Client**: atproto
-
-### Project Structure
-```
-bluesky-notify/
-├── app.py              # Web server and API endpoints
-├── cli.py              # Command-line interface
-├── database.py         # Database models and management
-├── notifier.py         # Core notification logic
-├── migrations/         # Database migrations
-├── requirements.txt    # Python dependencies
-├── static/            
-│   ├── app.js         # Frontend JavaScript
-│   └── styles.css     # Custom styles
-└── templates/
-    └── index.html     # Main web interface
+bluesky-notify start
 ```
 
 ## Development
@@ -130,27 +140,83 @@ bluesky-notify/
 
 1. Install development dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements/dev.txt
 ```
 
-2. Initialize database migrations:
+2. Install pre-commit hooks:
 ```bash
-export FLASK_APP=app.py
-flask db migrate -m "initial migration"
-flask db upgrade
+pre-commit install
 ```
 
-### Database Migrations
+### Logging System
 
-To create a new migration:
-```bash
-flask db migrate -m "description of changes"
-flask db upgrade
+The application uses a centralized logging system with the following features:
+
+#### Log Levels
+- `DEBUG`: Detailed debugging information
+- `INFO`: General operational information
+- `WARNING`: Warning messages for potential issues
+- `ERROR`: Error messages for serious problems
+- `CRITICAL`: Critical issues that require immediate attention
+
+#### Log Locations
+- **Console**: Simple format for immediate feedback
+  ```
+  INFO - Starting server
+  ```
+- **File**: Detailed format in `logs/bluesky_notify.log`
+  ```
+  2023-12-06 14:30:00,123 - bluesky_notify.api - INFO - Starting server
+  ```
+
+#### Using Loggers in Code
+```python
+from bluesky_notify.core.logger import get_logger
+
+# Get component-specific logger
+logger = get_logger('api')  # or 'core' or 'cli'
+
+# Log messages
+logger.debug("Debug information")
+logger.info("General information")
+logger.warning("Warning message")
+logger.error("Error message")
 ```
 
-To rollback a migration:
+#### Log Management
+- Logs are automatically rotated at 1MB
+- Keeps last 5 log files
+- Logs directory structure:
+  ```
+  logs/
+  ├── bluesky_notify.log
+  ├── bluesky_notify.log.1
+  └── bluesky_notify.log.2
+  ```
+
+### Running Tests
+
 ```bash
-flask db downgrade
+pytest
+```
+
+With coverage:
+```bash
+pytest --cov=bluesky_notify
+```
+
+### Code Style
+
+This project uses:
+- Black for code formatting
+- Flake8 for style enforcement
+- isort for import sorting
+
+Format code before committing:
+```bash
+black src/bluesky_notify tests
+isort src/bluesky_notify tests
+flake8 src/bluesky_notify tests
 ```
 
 ## Troubleshooting
@@ -168,14 +234,12 @@ flask db downgrade
 3. **Notification Issues**
    - Check system notification permissions
    - Verify account monitoring is enabled
-   - Review logs in `bluesky_notify.log`
+   - Review logs in `logs/bluesky_notify.log`
 
-## Security
-
-- Environment variables for sensitive data
-- No credential storage in code or logs
-- Secure API authentication
-- Input validation and sanitization
+4. **Logging Issues**
+   - Ensure `logs` directory exists and is writable
+   - Check log level configuration in `.env`
+   - Verify log rotation is working properly
 
 ## Contributing
 
@@ -185,9 +249,10 @@ flask db downgrade
 4. Submit a pull request
 
 Please ensure your code:
-- Follows the existing style
+- Follows our code style (Black + Flake8)
 - Includes appropriate tests
 - Updates documentation as needed
+- Uses proper logging practices
 
 ## License
 
