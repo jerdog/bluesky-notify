@@ -5,24 +5,29 @@ BlueSky Notification API Routes
 from flask import Flask, Blueprint, jsonify, request, render_template
 from flask_cors import CORS
 from ..core.notifier import BlueSkyNotifier
-from ..core.database import db, init_db
+from ..core.database import db, init_db, MonitoredAccount
 from ..core.logger import get_logger
 import asyncio
 import threading
 import os
 from datetime import datetime
+import pathlib
 
 # Get logger for API
 logger = get_logger('api')
+
+# Create Blueprint first
+bp = Blueprint('api', __name__)
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app)
 
 # Configure Flask app
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data'))
-os.makedirs(DB_PATH, exist_ok=True)
-DB_FILE = os.path.join(DB_PATH, 'bluesky_notify.db')
+# Use package-relative path for database
+DB_PATH = pathlib.Path(__file__).parent.parent / 'data'
+DB_PATH.mkdir(exist_ok=True)
+DB_FILE = DB_PATH / 'bluesky_notify.db'
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_FILE}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -31,7 +36,7 @@ logger.info(f"Using database at: {DB_FILE}")
 # Initialize database
 db.init_app(app)
 with app.app_context():
-    if not os.path.exists(DB_FILE):
+    if not DB_FILE.exists():
         logger.info("Creating new database")
         init_db(app)
     else:
@@ -56,8 +61,6 @@ notifier_thread = threading.Thread(target=run_notifier, daemon=True)
 notifier_thread.start()
 
 # API Routes
-bp = Blueprint('api', __name__)
-
 @bp.route('/accounts', methods=['GET'])
 def list_accounts():
     """List all monitored accounts."""
@@ -97,17 +100,46 @@ def add_account():
 
 @bp.route('/accounts/<handle>', methods=['DELETE'])
 def remove_account(handle):
-    """Remove a monitored account."""
+    """Remove a monitored account by handle."""
     try:
         with app.app_context():
-            result = notifier.remove_account(handle)
+            result = notifier.remove_account(handle, by_did=False)
             if "error" in result:
-                return jsonify({"error": result["error"]}), 404
-            return jsonify({"data": result})
-
+                return jsonify({"error": result["error"]}), 400
+            return jsonify({"data": result}), 200
     except Exception as e:
         logger.error(f"Error removing account: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@bp.route('/accounts/did/<did>', methods=['DELETE'])
+def remove_account_by_did(did):
+    """Remove a monitored account by DID."""
+    logger.info(f"Received DELETE request for account with DID: {did}")
+    try:
+        with app.app_context():
+            # Debug: Check if account exists first
+            account = MonitoredAccount.query.filter_by(did=did).first()
+            if account:
+                logger.info(f"Found account in database - DID: {account.did}, Handle: {account.handle}")
+            else:
+                logger.warning(f"No account found with DID: {did}")
+                return jsonify({"error": f"Account with DID {did} not found"}), 404
+            
+            # Try to remove the account
+            result = notifier.remove_account(did, by_did=True)
+            logger.info(f"Account removal result: {result}")
+            
+            if "error" in result:
+                logger.warning(f"Error removing account: {result['error']}")
+                return jsonify({"error": result["error"]}), 400
+                
+            logger.info("Account removed successfully")
+            return jsonify({"data": result}), 200
+            
+    except Exception as e:
+        error_msg = f"Error removing account by DID: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({"error": error_msg}), 500
 
 @bp.route('/accounts/<handle>/preferences', methods=['PUT'])
 def update_preferences(handle):
@@ -158,5 +190,8 @@ def health_check():
 app.register_blueprint(bp, url_prefix='/api')
 
 if __name__ == '__main__':
-    logger.info("Starting Flask application")
-    app.run(host='0.0.0.0', port=3001)
+    # Use port 3001 for local development, 5001 for Docker
+    is_docker = os.path.exists('/.dockerenv')
+    default_port = 5001 if is_docker else 3001
+    port = int(os.environ.get('PORT', default_port))
+    app.run(host='0.0.0.0', port=port, debug=True)

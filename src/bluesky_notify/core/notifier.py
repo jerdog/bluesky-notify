@@ -1,7 +1,17 @@
 """
 BlueSky Notification Service
 
-This module provides notifications for Bluesky social network posts.
+This module provides a notification service for monitoring and alerting about new posts
+from Bluesky social network accounts. It supports both desktop and email notifications,
+with configurable preferences per account.
+
+Features:
+- Asynchronous monitoring of multiple Bluesky accounts
+- Desktop notifications via system notifications
+- Email notifications via configurable email service
+- Customizable check intervals
+- Duplicate notification prevention
+- Error handling with exponential backoff
 """
 
 import asyncio
@@ -10,7 +20,7 @@ import backoff
 import json
 import webbrowser
 import os
-import subprocess
+from desktop_notifier import DesktopNotifier
 from datetime import datetime, timezone
 from .database import (
     db, MonitoredAccount, NotificationPreference, NotifiedPost,
@@ -26,7 +36,7 @@ class BlueSkyNotifier:
     """Main notification manager for Bluesky posts.
     
     This class handles the monitoring of Bluesky accounts and sends notifications
-    for new posts using macOS notifications and email.
+    for new posts using desktop notifications and email.
     
     Attributes:
         app: Flask application instance
@@ -34,6 +44,8 @@ class BlueSkyNotifier:
         check_interval: Time between checks for new posts (in seconds)
         _running: Flag indicating if the monitor is running
         last_check: Dictionary tracking last check time per account
+        notifier: Desktop notification handler
+        loop: Asyncio event loop for background tasks
     """
     
     def __init__(self, app=None):
@@ -47,116 +59,24 @@ class BlueSkyNotifier:
         self.check_interval = 60  # seconds
         self._running = False
         self.last_check = {}
-
-    def _send_notification(self, title: str, message: str, url: str) -> bool:
-        """Send a macOS notification using terminal-notifier.
-        
-        Args:
-            title: The notification title
-            message: The notification message
-            url: The URL to open when clicked
-            
-        Returns:
-            bool: True if notification was sent successfully, False otherwise
-            
-        Raises:
-            subprocess.CalledProcessError: If terminal-notifier command fails
-        """
-        try:
-            # Clean and truncate the message
-            # Remove quotes and escape special characters
-            clean_message = message.replace('"', "'").replace('[', r'\[').replace(']', r'\]')
-            # Truncate to a reasonable length to avoid issues
-            truncated_message = clean_message[:140] + "..." if len(clean_message) > 140 else clean_message
-            
-            # Clean the title similarly
-            clean_title = title.replace('"', "'").replace('[', r'\[').replace(']', r'\]')
-
-            subprocess.run([
-                'terminal-notifier',
-                '-title', clean_title,
-                '-message', truncated_message,
-                '-open', url,
-                '-sound', 'default',
-                '-group', 'com.blueskynotify'
-            ], check=True, capture_output=True, text=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Error sending notification: {str(e)}\nOutput: {e.stdout}\nError: {e.stderr}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error sending notification: {str(e)}")
-            return False
-
-    def _send_email(self, title: str, message: str, url: str) -> bool:
-        """Send an email notification using Mailgun.
-        
-        Args:
-            title: The email subject
-            message: The email body
-            url: The URL to the post
-            
-        Returns:
-            bool: True if email was sent successfully, False otherwise
-        """
-        try:
-            import requests
-
-            # Get Mailgun configuration
-            api_key = os.getenv('MAILGUN_API_KEY')
-            domain = os.getenv('MAILGUN_DOMAIN')
-            from_email = os.getenv('MAILGUN_FROM_EMAIL')
-            to_email = os.getenv('MAILGUN_TO_EMAIL')
-
-            if not all([api_key, domain, from_email, to_email]):
-                logger.debug("Mailgun configuration not complete, skipping email notification")
-                return False
-
-            # Create HTML body with clickable link
-            html = f"""
-            <html>
-              <body>
-                <p>{message}</p>
-                <p><a href="{url}">View Post</a></p>
-              </body>
-            </html>
-            """
-
-            # Send email using Mailgun API
-            response = requests.post(
-                f"https://api.mailgun.net/v3/{domain}/messages",
-                auth=("api", api_key),
-                data={
-                    "from": from_email,
-                    "to": to_email,
-                    "subject": title,
-                    "html": html
-                }
-            )
-            response.raise_for_status()
-
-            logger.info(f"Email notification sent via Mailgun: {title}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error sending email notification via Mailgun: {str(e)}")
-            return False
+        self.notifier = DesktopNotifier()
+        self.loop = None
 
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5)
-    async def _make_request(self, endpoint: str, params: dict = None) -> dict:
-        """Make a request to the BlueSky API with retry logic.
+    def _fetch_account_info(self, identifier):
+        """Fetch account information from Bluesky API.
         
         Args:
-            endpoint: API endpoint to call
-            params: Optional query parameters
+            identifier: Account handle or DID
             
         Returns:
-            dict: API response data
+            dict: Account information including DID, handle, and profile
             
         Raises:
             requests.exceptions.RequestException: If API request fails
         """
-        url = f"{self.base_url}/{endpoint}"
+        url = f"{self.base_url}/app.bsky.actor.getProfile"
+        params = {"actor": identifier}
         try:
             response = requests.get(url, params=params)
             response.raise_for_status()
@@ -164,6 +84,152 @@ class BlueSkyNotifier:
         except requests.exceptions.RequestException as e:
             logger.error(f"API request failed: {str(e)}")
             raise
+
+    async def _check_new_posts(self, account):
+        """Check for new posts from a monitored account.
+        
+        Args:
+            account: MonitoredAccount instance to check
+            
+        Returns:
+            list: New posts that haven't been notified about
+        """
+        try:
+            posts = await self.get_recent_posts(account.handle)
+            last_check = self.last_check.get(account.handle)
+
+            with self.app.app_context():
+                # Refresh account to get notification preferences within session
+                account = MonitoredAccount.query.get(account.id)
+                if not account:
+                    logger.error(f"Account {account.handle} not found in database")
+                    return []
+
+                new_posts = []
+                for post in posts:
+                    post_id = post.get("post", {}).get("uri")
+                    if not post_id:
+                        continue
+
+                    try:
+                        # Check if we've already notified about this post
+                        existing_notification = NotifiedPost.query.filter_by(
+                            account_did=account.did,
+                            post_id=post_id
+                        ).first()
+                        
+                        if existing_notification:
+                            continue
+
+                        # Get post timestamp
+                        post_time = datetime.fromisoformat(
+                            post.get("post", {}).get("indexedAt", "").replace("Z", "+00:00")
+                        )
+
+                        # Skip if post is older than last check
+                        if last_check and post_time <= last_check:
+                            continue
+
+                        new_posts.append(post)
+
+                    except Exception as e:
+                        logger.error(f"Error processing post {post_id}: {str(e)}")
+                        continue
+
+                return new_posts
+
+        except Exception as e:
+            logger.error(f"Error checking posts for {account.handle}: {str(e)}")
+            return []
+
+    def _format_notification(self, post, account):
+        """Format post information for notification.
+        
+        Args:
+            post: Post data from Bluesky API
+            account: MonitoredAccount instance
+            
+        Returns:
+            tuple: (title, message, url) for notification
+        """
+        try:
+            # Get post details
+            text = post.get("post", {}).get("record", {}).get("text", "")
+            post_uri = post.get("post", {}).get("uri", "")
+            
+            # Convert URI to web URL
+            if post_uri:
+                try:
+                    _, _, _, _, post_rkey = post_uri.split("/")
+                    web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
+                    
+                    # Format notification title and message
+                    title = f"New post from {account.display_name or account.handle}"
+                    message = text[:200] + ("..." if len(text) > 200 else "")
+                    
+                    return title, message, web_url
+                except ValueError:
+                    logger.error(f"Invalid post URI format: {post_uri}")
+                    return None
+        except Exception as e:
+            logger.error(f"Error formatting notification: {str(e)}")
+            return None
+
+    async def _send_notifications(self, new_posts, account):
+        """Send notifications for new posts.
+        
+        Handles both desktop and email notifications based on account preferences.
+        
+        Args:
+            new_posts: List of new posts to notify about
+            account: MonitoredAccount instance
+        """
+        try:
+            with self.app.app_context():
+                # Refresh account to get notification preferences within session
+                account = MonitoredAccount.query.get(account.id)
+                if not account:
+                    logger.error(f"Account {account.handle} not found in database")
+                    return
+
+                for post in new_posts:
+                    notification = self._format_notification(post, account)
+                    if not notification:
+                        continue
+
+                    title, message, url = notification
+
+                    # Send notifications based on preferences
+                    notifications_sent = False
+                    for pref in account.notification_preferences:
+                        if not pref.enabled:
+                            continue
+
+                        try:
+                            if pref.type == "desktop":
+                                desktop_sent = self._send_notification(
+                                    title=title,
+                                    message=message,
+                                    url=url
+                                )
+                                notifications_sent = notifications_sent or desktop_sent
+                            elif pref.type == "email":
+                                email_sent = self._send_email(
+                                    title=title,
+                                    message=message,
+                                    url=url
+                                )
+                                notifications_sent = notifications_sent or email_sent
+                        except Exception as e:
+                            logger.error(f"Error sending {pref.type} notification: {str(e)}")
+                            continue
+
+                    # Only mark as notified if at least one notification was sent successfully
+                    if notifications_sent:
+                        mark_post_notified(account.did, post.get("post", {}).get("uri"))
+
+        except Exception as e:
+            logger.error(f"Error sending notifications for {account.handle}: {str(e)}")
 
     async def get_profile(self, handle: str) -> dict:
         """Get profile information for a handle.
@@ -248,11 +314,12 @@ class BlueSkyNotifier:
             logger.error(f"Error adding account {handle}: {str(e)}")
             return {"error": str(e)}
 
-    def remove_account(self, handle: str) -> dict:
+    def remove_account(self, identifier, by_did=False):
         """Remove a monitored account.
         
         Args:
-            handle: Bluesky handle to remove
+            identifier: Either the handle or DID of the account to remove
+            by_did: If True, identifier is treated as a DID. If False, as a handle.
             
         Returns:
             dict: Result data (success, error)
@@ -261,15 +328,23 @@ class BlueSkyNotifier:
             Exception: If database operation fails
         """
         try:
+            logger.info(f"Notifier removing account with {'DID' if by_did else 'handle'}: {identifier}")
+            
             with self.app.app_context():
-                result = remove_monitored_account(handle)
-            if "error" not in result:
-                self.last_check.pop(handle, None)
-            return result
+                result = remove_monitored_account(identifier, by_did)
+                logger.info(f"Database removal result: {result}")
+                
+                if "error" not in result:
+                    handle = result["account"]["handle"]
+                    logger.info(f"Removing {handle} from last_check cache")
+                    self.last_check.pop(handle, None)
+                    
+                return result
 
         except Exception as e:
-            logger.error(f"Error removing account {handle}: {str(e)}")
-            return {"error": str(e)}
+            error_msg = f"Error removing account: {str(e)}"
+            logger.error(error_msg)
+            return {"error": error_msg}
 
     def update_preferences(self, handle: str, preferences: dict) -> dict:
         """Update notification preferences for an account.
@@ -312,99 +387,143 @@ class BlueSkyNotifier:
             logger.error(f"Error updating preferences for {handle}: {str(e)}")
             return {"error": str(e)}
 
-    async def check_new_posts(self, account: MonitoredAccount) -> None:
-        """Check for new posts from an account and send notifications.
+    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5)
+    async def _make_request(self, endpoint: str, params: dict = None) -> dict:
+        """Make a request to the BlueSky API with retry logic.
         
         Args:
-            account: MonitoredAccount instance to check for new posts
+            endpoint: API endpoint to call
+            params: Optional query parameters
+            
+        Returns:
+            dict: API response data
             
         Raises:
-            Exception: If API request fails
+            requests.exceptions.RequestException: If API request fails
+        """
+        url = f"{self.base_url}/{endpoint}"
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API request failed: {str(e)}")
+            raise
+
+    async def _send_notification_async(self, title: str, message: str, url: str) -> bool:
+        """Send a desktop notification using desktop-notifier asynchronously.
+        
+        Args:
+            title: The notification title
+            message: The notification message
+            url: The URL to open when clicked
+            
+        Returns:
+            bool: True if notification was sent successfully, False otherwise
         """
         try:
-            posts = await self.get_recent_posts(account.handle)
-            last_check = self.last_check.get(account.handle)
+            # Clean and truncate the message
+            clean_message = message.replace('"', "'")
+            truncated_message = clean_message[:140] + "..." if len(clean_message) > 140 else clean_message
+            
+            # Clean the title
+            clean_title = title.replace('"', "'")
 
-            with self.app.app_context():
-                # Refresh account to get notification preferences within session
-                account = MonitoredAccount.query.get(account.id)
-                if not account:
-                    logger.error(f"Account {account.handle} not found in database")
-                    return
+            # Send notification using desktop-notifier
+            await self.notifier.send(
+                title=clean_title,
+                message=truncated_message,
+                on_clicked=lambda *args: webbrowser.open(url)
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Unexpected error sending notification: {str(e)}")
+            return False
 
-                for post in posts:
-                    post_id = post.get("post", {}).get("uri")
-                    if not post_id:
-                        continue
+    def _send_notification(self, title: str, message: str, url: str) -> bool:
+        """Send a desktop notification using desktop-notifier.
+        
+        Args:
+            title: The notification title
+            message: The notification message
+            url: The URL to open when clicked
+            
+        Returns:
+            bool: True if notification was sent successfully, False otherwise
+        """
+        try:
+            # If we're in an event loop, use it
+            if self.loop and self.loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(
+                    self._send_notification_async(title, message, url),
+                    self.loop
+                )
+                return future.result()
+            else:
+                # Create a new event loop for this thread if needed
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(self._send_notification_async(title, message, url))
+                finally:
+                    loop.close()
+        except Exception as e:
+            logger.error(f"Unexpected error sending notification: {str(e)}")
+            return False
 
-                    try:
-                        # Check if we've already notified about this post
-                        existing_notification = NotifiedPost.query.filter_by(
-                            account_did=account.did,
-                            post_id=post_id
-                        ).first()
-                        
-                        if existing_notification:
-                            continue
+    def _send_email(self, title: str, message: str, url: str) -> bool:
+        """Send an email notification using Mailgun.
+        
+        Args:
+            title: The email subject
+            message: The email body
+            url: The URL to the post
+            
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        try:
+            import requests
 
-                        # Get post timestamp
-                        post_time = datetime.fromisoformat(
-                            post.get("post", {}).get("indexedAt", "").replace("Z", "+00:00")
-                        )
+            # Get Mailgun configuration
+            api_key = os.getenv('MAILGUN_API_KEY')
+            domain = os.getenv('MAILGUN_DOMAIN')
+            from_email = os.getenv('MAILGUN_FROM_EMAIL')
+            to_email = os.getenv('MAILGUN_TO_EMAIL')
 
-                        # Skip if post is older than last check
-                        if last_check and post_time <= last_check:
-                            continue
+            if not all([api_key, domain, from_email, to_email]):
+                logger.debug("Mailgun configuration not complete, skipping email notification")
+                return False
 
-                        # Get post details
-                        text = post.get("post", {}).get("record", {}).get("text", "")
-                        post_uri = post.get("post", {}).get("uri", "")
-                        
-                        # Convert URI to web URL
-                        if post_uri:
-                            try:
-                                _, _, _, _, post_rkey = post_uri.split("/")
-                                web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
-                                
-                                # Send notifications based on preferences
-                                notifications_sent = False
-                                for pref in account.notification_preferences:
-                                    if not pref.enabled:
-                                        continue
+            # Create HTML body with clickable link
+            html = f"""
+            <html>
+              <body>
+                <p>{message}</p>
+                <p><a href="{url}">View Post</a></p>
+              </body>
+            </html>
+            """
 
-                                    try:
-                                        if pref.type == "desktop":
-                                            desktop_sent = self._send_notification(
-                                                title=f"New post from {account.display_name or account.handle}",
-                                                message=text[:200] + ("..." if len(text) > 200 else ""),
-                                                url=web_url
-                                            )
-                                            notifications_sent = notifications_sent or desktop_sent
-                                        elif pref.type == "email":
-                                            email_sent = self._send_email(
-                                                title=f"New post from {account.display_name or account.handle}",
-                                                message=text,
-                                                url=web_url
-                                            )
-                                            notifications_sent = notifications_sent or email_sent
-                                    except Exception as e:
-                                        logger.error(f"Error sending {pref.type} notification: {str(e)}")
-                                        continue
+            # Send email using Mailgun API
+            response = requests.post(
+                f"https://api.mailgun.net/v3/{domain}/messages",
+                auth=("api", api_key),
+                data={
+                    "from": from_email,
+                    "to": to_email,
+                    "subject": title,
+                    "html": html
+                }
+            )
+            response.raise_for_status()
 
-                                # Only mark as notified if at least one notification was sent successfully
-                                if notifications_sent:
-                                    mark_post_notified(account.did, post_id)
-
-                            except ValueError:
-                                logger.error(f"Invalid post URI format: {post_uri}")
-                                continue
-
-                    except Exception as e:
-                        logger.error(f"Error processing post {post_id}: {str(e)}")
-                        continue
+            logger.info(f"Email notification sent via Mailgun: {title}")
+            return True
 
         except Exception as e:
-            logger.error(f"Error checking posts for {account.handle}: {str(e)}")
+            logger.error(f"Error sending email notification via Mailgun: {str(e)}")
+            return False
 
     async def run(self) -> None:
         """Run the notification service.
@@ -412,12 +531,14 @@ class BlueSkyNotifier:
         Continuously checks for new posts from monitored accounts and sends notifications.
         """
         self._running = True
+        self.loop = asyncio.get_event_loop()
         while self._running:
             try:
                 with self.app.app_context():
                     accounts = MonitoredAccount.query.filter_by(is_active=True).all()
                     for account in accounts:
-                        await self.check_new_posts(account)
+                        new_posts = await self._check_new_posts(account)
+                        await self._send_notifications(new_posts, account)
                         self.last_check[account.handle] = datetime.now(timezone.utc)
             except Exception as e:
                 logger.error(f"Error in notification service: {str(e)}")

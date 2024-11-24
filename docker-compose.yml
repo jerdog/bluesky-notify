@@ -4,18 +4,18 @@ services:
     container_name: bluesky-notify
     restart: unless-stopped
     volumes:
-      - ./data:/app/data:Z
+      - ./src/bluesky_notify/data:/app/src/bluesky_notify/data:Z
       - ./logs:/app/logs:Z
     env_file:
       - .env
     ports:
-      - "5000:5000"
+      - "5001:5001"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bluesky.rule=Host(`bluesky.localhost`)"
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5001/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

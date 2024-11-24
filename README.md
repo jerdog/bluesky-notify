@@ -6,17 +6,23 @@ A cross-platform notification system for tracking and receiving alerts about new
 
 - Track posts from multiple Bluesky accounts
 - Flexible notification options:
-  - Desktop notifications (macOS)
+  - Desktop notifications (macOS, Linux, Windows)
   - Email notifications (via Mailgun)
 - Per-account notification preferences
 - Prevent duplicate notifications
 - Detailed logging for troubleshooting
 - Docker support for easy deployment
+- SQLite database for persistent storage
+- Automatic retries with exponential backoff
+- Web interface for account management
 
 ## Prerequisites
 
 - Python 3.11 or higher
-- For desktop notifications on macOS: `terminal-notifier`
+- For desktop notifications:
+  - macOS: `terminal-notifier`
+  - Linux: `notify-send`
+  - Windows: Windows 10 or higher
 - Mailgun account (for email notifications)
 - Docker (optional, for containerized deployment)
 
@@ -49,204 +55,111 @@ A cross-platform notification system for tracking and receiving alerts about new
    ```
 
 5. Edit `.env` with your configuration:
-   ```ini
-   # Mailgun Configuration
-   MAILGUN_API_KEY=your_mailgun_api_key
-   MAILGUN_DOMAIN=your_mailgun_domain
-   MAILGUN_FROM_EMAIL=sender@example.com
-   MAILGUN_TO_EMAIL=recipient@example.com
+   ```env
+   # Flask configuration
+   FLASK_APP=src/bluesky_notify
+   FLASK_ENV=development
+   SECRET_KEY=your-secret-key
 
-   # Optional Logging
-   DEBUG=True
-   LOG_LEVEL=INFO
-   LOG_FILE=bluesky_notify.log
+   # Database configuration
+   DATABASE_URL=sqlite:///data/bluesky_notify.db
+
+   # Notification settings
+   CHECK_INTERVAL=60  # seconds
+
+   # Email configuration (optional)
+   MAILGUN_API_KEY=your-mailgun-api-key
+   MAILGUN_DOMAIN=your-mailgun-domain
+   MAILGUN_FROM_EMAIL=notifications@yourdomain.com
+   MAILGUN_TO_EMAIL=your@email.com
    ```
 
-### Option 2: Container Installation
+### Option 2: Docker Installation
 
-Choose your preferred container runtime:
-
-#### Docker
-
-1. Clone the repository and configure .env as described above
-
-2. Build and start with Docker Compose:
+1. Build and run using Docker Compose:
    ```bash
    docker-compose up -d
    ```
 
-3. View logs:
+2. Or using Podman:
    ```bash
-   docker-compose logs -f
+   podman-compose up -d
    ```
-
-4. Stop the application:
-   ```bash
-   docker-compose down
-   ```
-
-#### Podman
-
-1. Clone the repository and configure .env as described above
-
-2. Build and start with Podman Compose:
-   ```bash
-   # Install podman-compose if needed
-   pip install podman-compose
-
-   # Start the application
-   podman-compose -f podman-compose.yml up -d
-   ```
-
-3. View logs:
-   ```bash
-   podman-compose logs -f
-   ```
-
-4. Stop the application:
-   ```bash
-   podman-compose down
-   ```
-
-#### Portainer
-
-1. Prerequisites:
-   - Running Portainer instance
-   - Container registry (if using private registry)
-   - Network named 'bluesky-network'
-   - Volumes 'bluesky_data' and 'bluesky_logs'
-
-2. Create the required volumes and network:
-   ```bash
-   # Create volumes
-   docker volume create bluesky_data
-   docker volume create bluesky_logs
-   
-   # Create network
-   docker network create bluesky-network
-   ```
-
-3. In Portainer:
-   - Go to Stacks → Add Stack
-   - Upload the portainer-stack.yml file
-   - Set environment variables:
-     - REGISTRY_URL: Your registry URL (optional)
-     - DOMAIN: Your domain (defaults to bluesky.localhost)
-   - Deploy the stack
-
-4. Monitor the stack through Portainer UI
-
-## Container Management Options
-
-### Docker Compose
-- Standard Docker container management
-- Suitable for local development and simple deployments
-- Uses local filesystem for data persistence
-
-### Podman
-- Daemonless container engine
-- Rootless containers by default
-- SELinux support with :Z volume flag
-- Compatible with Docker commands
-- Ideal for security-focused environments
-
-### Portainer
-- Web-based container management
-- Supports multiple environments
-- Built-in monitoring and logging
-- Easy deployment and updates
-- Suitable for production environments
 
 ## Usage
 
-### Running Locally
+1. Start the application:
+   ```bash
+   flask run
+   ```
 
-```bash
-python run.py
-```
+2. Access the web interface at `http://localhost:5000`
 
-The application will start and begin monitoring configured Bluesky accounts.
+3. Add accounts to monitor:
+   - Enter a Bluesky handle (e.g., @user.bsky.social)
+   - Configure notification preferences
+   - Click "Add Account"
 
-### Running with Docker
+4. Monitor logs for notification activity:
+   ```bash
+   tail -f logs/notifier.log
+   ```
 
-```bash
-# Start the application
-docker-compose up -d
+## API Endpoints
 
-# View logs
-docker-compose logs -f
+- `GET /api/accounts` - List monitored accounts
+- `POST /api/accounts` - Add new account to monitor
+- `DELETE /api/accounts/<handle>` - Remove monitored account
+- `PUT /api/accounts/<handle>/preferences` - Update notification preferences
 
-# Stop the application
-docker-compose down
-```
+## Architecture
 
-## Configuration
+The application is structured into several core components:
 
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| MAILGUN_API_KEY | Your Mailgun API key | Yes (for email) |
-| MAILGUN_DOMAIN | Your Mailgun domain | Yes (for email) |
-| MAILGUN_FROM_EMAIL | Sender email address | Yes (for email) |
-| MAILGUN_TO_EMAIL | Recipient email address | Yes (for email) |
-| DEBUG | Enable debug mode | No |
-| LOG_LEVEL | Logging level (INFO/DEBUG/ERROR) | No |
-| LOG_FILE | Log file path | No |
-
-### Notification Preferences
-
-Notification preferences can be configured per account:
-- Desktop notifications (macOS only)
-- Email notifications (requires Mailgun configuration)
-- Multiple notification types simultaneously
-
-## Directory Structure
-
-```
-bluesky-notify/
-├── data/               # Database and data files
-│   └── backups/       # Database backups
-├── logs/              # Application logs
-├── src/               # Source code
-├── tests/             # Test files
-├── .env               # Environment configuration
-├── docker-compose.yml # Docker configuration
-├── Dockerfile         # Docker build file
-├── podman-compose.yml # Podman configuration
-├── portainer-stack.yml # Portainer stack configuration
-└── requirements.txt   # Python dependencies
-```
+- `core/notifier.py` - Main notification service
+- `core/database.py` - Database models and operations
+- `core/config.py` - Configuration management
+- `api/routes.py` - API endpoints
+- `templates/` - Web interface templates
+- `static/` - Static assets
 
 ## Development
 
-### Running Tests
+1. Install development dependencies:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
 
-```bash
-python -m pytest tests/
-```
+2. Run tests:
+   ```bash
+   pytest
+   ```
 
-### Database Migrations
+3. Format code:
+   ```bash
+   black src/
+   ```
 
-```bash
-python migrate_db.py
-```
-
-## Troubleshooting
-
-1. Check the logs in `logs/bluesky_notify.log`
-2. Ensure all required environment variables are set
-3. Verify Mailgun configuration for email notifications
-4. For desktop notifications, ensure `terminal-notifier` is installed (macOS)
+4. Check type hints:
+   ```bash
+   mypy src/
+   ```
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+3. Make your changes
+4. Run tests
+5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License - see LICENSE file for details
+
+## Acknowledgments
+
+- Built with Flask and SQLAlchemy
+- Uses the Bluesky API
+- Desktop notifications via desktop-notifier
+- Email notifications via Mailgun

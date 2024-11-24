@@ -214,23 +214,28 @@ async function toggleNotification(handle, type, enabled) {
 
 // Remove an account
 async function removeAccount(did) {
+    // Add confirmation dialog
     if (!confirm('Are you sure you want to remove this account?')) {
         return;
     }
-    
+
     try {
-        const response = await fetch(`${API_BASE_URL}/accounts/${did}`, {
+        const response = await fetch(`/api/accounts/did/${did}`, {
             method: 'DELETE'
         });
-
+        
         if (!response.ok) {
-            throw new Error('Failed to remove account');
+            const data = await response.json();
+            throw new Error(data.error || 'Failed to remove account');
         }
 
-        await loadAccounts();
+        // Show success message
         showNotification('Account removed successfully');
+        
+        // Refresh the accounts list
+        await loadAccounts();
     } catch (error) {
         console.error('Error removing account:', error);
-        showNotification('Failed to remove account', 'error');
+        showNotification(error.message, 'error');
     }
 }
