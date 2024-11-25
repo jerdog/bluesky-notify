@@ -322,27 +322,22 @@ def mark_post_notified(account_did: str, post_id: str) -> bool:
         bool: True if post was marked as notified, False if already notified
     """
     try:
-        # Check if already notified
-        existing = NotifiedPost.query.filter_by(
-            account_did=account_did,
-            post_id=post_id
-        ).first()
-        
-        if existing:
-            return False
-
-        # Add notification record
+        # Try to insert directly - this is more efficient and handles race conditions
         notification = NotifiedPost(
             account_did=account_did,
             post_id=post_id
         )
         db.session.add(notification)
         db.session.commit()
-        
         return True
 
     except Exception as e:
         db.session.rollback()
+        # Check if this was a unique constraint violation
+        if isinstance(e, db.exc.IntegrityError) and "UNIQUE constraint failed" in str(e):
+            # This is expected when the post was already notified about
+            return False
+        # Log other unexpected errors
         logger.error(f"Error marking post as notified: {str(e)}")
         return False
 
