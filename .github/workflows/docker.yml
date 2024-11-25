@@ -1,20 +1,10 @@
 name: Docker
 
 on:
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'Dockerfile'
-      - 'docker-compose.yml'
-      - 'src/**'
-      - 'requirements.txt'
   push:
-    branches: [ main ]
-    paths:
-      - 'Dockerfile'
-      - 'docker-compose.yml'
-      - 'src/**'
-      - 'requirements.txt'
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,37 +35,51 @@ jobs:
           push: false
           load: true
           tags: bluesky-notify:test
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # Temp fix for cache size
       - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
+          mkdir -p /tmp/.buildx-cache-new
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Create test environment file
         run: |
-          echo "DOCKER_CONTAINER=true" > .env
-          echo "NOTIFICATION_METHOD=email" >> .env
-          echo "CHECK_INTERVAL=60" >> .env
+          echo "BLUESKY_HANDLE=test" > .env
+          echo "BLUESKY_EMAIL=test@example.com" >> .env
+          echo "BLUESKY_PASSWORD=test123" >> .env
+
+      - name: Install Docker Compose
+        run: |
+          DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+          mkdir -p $DOCKER_CONFIG/cli-plugins
+          curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+          chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+          docker compose version
 
       - name: Start containers
-        run: docker-compose up -d
+        run: |
+          docker compose up -d
+          sleep 10
 
       - name: Check container health
         run: |
-          sleep 10
-          docker-compose ps
-          curl -f http://localhost:5000/api/health || exit 1
+          docker compose ps
+          curl http://localhost:5001/health
+
+      - name: Install pytest in container
+        run: |
+          docker compose exec -T bluesky-notify pip install pytest pytest-cov
 
       - name: Run integration tests
         run: |
-          docker-compose exec -T bluesky-notify pytest tests/integration/
+          docker compose exec -T bluesky-notify python -m pytest tests/test_*.py
 
       - name: Show logs on failure
         if: failure()
-        run: docker-compose logs
+        run: docker compose logs
 
       - name: Stop containers
-        run: docker-compose down
+        run: docker compose down

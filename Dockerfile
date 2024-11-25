@@ -17,10 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
     sqlite3 \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Install Python dependencies
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -29,6 +30,9 @@ COPY . .
 
 # Install the package in development mode
 RUN pip install -e .
+
+# Install pytest for testing
+RUN pip install pytest
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/src/bluesky_notify/data /app/logs /app/instance \
