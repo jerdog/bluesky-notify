@@ -15,28 +15,30 @@ Features:
 """
 
 import asyncio
-import aiohttp
-import requests
-import backoff
 import json
-import webbrowser
 import os
-from desktop_notifier import DesktopNotifier
+import webbrowser
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
-from .database import (
-    db, MonitoredAccount, NotificationPreference, NotifiedPost,
-    get_monitored_accounts, add_monitored_account, remove_monitored_account,
-    mark_post_notified, update_notification_preferences
-)
-from .logger import get_logger
+from typing import Any, Dict, List, Optional
+
+import aiohttp
+import backoff
+import requests
+from desktop_notifier import DesktopNotifier
 from flask import current_app
 
-logger = get_logger('notifier')
+from .database import (MonitoredAccount, NotificationPreference, NotifiedPost,
+                       add_monitored_account, db, get_monitored_accounts,
+                       mark_post_notified, remove_monitored_account,
+                       update_notification_preferences)
+from .logger import get_logger
+
+logger = get_logger("notifier")
+
 
 class BlueSkyNotifier:
     """Main notification manager for Bluesky posts."""
-    
+
     def __init__(self, app=None):
         """Initialize the BlueSkyNotifier."""
         self.app = app
@@ -47,53 +49,58 @@ class BlueSkyNotifier:
         self.notifier = DesktopNotifier()
         self.loop = None
         self._session = None
-    
+
     def authenticate(self) -> bool:
         """Authenticate with the Bluesky API.
-        
+
         Returns:
             bool: True if authentication successful, False otherwise
         """
         try:
             # For public API endpoints, no authentication is needed
             # Just verify we can access the API
-            response = requests.get(f"{self.base_url}/app.bsky.actor.getProfile", params={"actor": "bsky.app"})
+            response = requests.get(
+                f"{self.base_url}/app.bsky.actor.getProfile",
+                params={"actor": "bsky.app"},
+            )
             response.raise_for_status()
             return True
         except Exception as e:
             logger.error(f"Authentication failed: {str(e)}")
             return False
-    
+
     def get_account_info(self, handle: str) -> Dict[str, Any]:
         """Get account information from Bluesky.
-        
+
         Args:
             handle: Account handle (e.g., @user.bsky.social)
-            
+
         Returns:
             dict: Account information including DID, handle, and profile
-            
+
         Raises:
             Exception: If API request fails
         """
         try:
             # Remove @ if present
-            handle = handle.lstrip('@')
-            
+            handle = handle.lstrip("@")
+
             # Get profile information
-            response = requests.get(f"{self.base_url}/app.bsky.actor.getProfile", params={"actor": handle})
+            response = requests.get(
+                f"{self.base_url}/app.bsky.actor.getProfile", params={"actor": handle}
+            )
             response.raise_for_status()
             data = response.json()
-            
+
             if not data:
                 raise Exception(f"Could not find account: {handle}")
-            
+
             return {
-                'did': data.get('did'),
-                'handle': data.get('handle'),
-                'display_name': data.get('displayName'),
-                'avatar_url': data.get('avatar'),
-                'description': data.get('description', '')
+                "did": data.get("did"),
+                "handle": data.get("handle"),
+                "display_name": data.get("displayName"),
+                "avatar_url": data.get("avatar"),
+                "description": data.get("description", ""),
             }
         except Exception as e:
             logger.error(f"Error getting account info: {str(e)}")
@@ -101,14 +108,14 @@ class BlueSkyNotifier:
 
     async def _make_request(self, endpoint: str, params: dict = None) -> Dict[str, Any]:
         """Make an async request to the BlueSky API with retry logic.
-        
+
         Args:
             endpoint: API endpoint to call
             params: Optional query parameters
-            
+
         Returns:
             dict: API response data
-            
+
         Raises:
             aiohttp.ClientError: If API request fails
         """
@@ -120,7 +127,7 @@ class BlueSkyNotifier:
 
     def list_monitored_accounts(self) -> List[Dict[str, Any]]:
         """List all monitored accounts.
-        
+
         Returns:
             list: List of monitored accounts with their status
         """
@@ -128,30 +135,32 @@ class BlueSkyNotifier:
             accounts = []
             for account in get_monitored_accounts():
                 prefs = account.notification_preferences
-                accounts.append({
-                    'handle': account.handle,
-                    'display_name': account.display_name,
-                    'desktop_notifications': prefs.desktop if prefs else False,
-                    'email_notifications': prefs.email if prefs else False
-                })
-            
+                accounts.append(
+                    {
+                        "handle": account.handle,
+                        "display_name": account.display_name,
+                        "desktop_notifications": prefs.desktop if prefs else False,
+                        "email_notifications": prefs.email if prefs else False,
+                    }
+                )
+
             if not accounts:
                 logger.info("No accounts are currently being monitored")
                 return []
-            
+
             # Print account information
             for account in accounts:
                 status = []
-                if account['desktop_notifications']:
+                if account["desktop_notifications"]:
                     status.append("Desktop")
-                if account['email_notifications']:
+                if account["email_notifications"]:
                     status.append("Email")
-                
+
                 logger.info(
                     f"{account['display_name'] or account['handle']} "
                     f"(@{account['handle']}) - Notifications: {', '.join(status) or 'None'}"
                 )
-            
+
             return accounts
         except Exception as e:
             logger.error(f"Error listing accounts: {str(e)}")
@@ -159,10 +168,10 @@ class BlueSkyNotifier:
 
     def toggle_account_status(self, handle: str) -> bool:
         """Toggle monitoring status for an account.
-        
+
         Args:
             handle: Account handle to toggle
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -171,10 +180,10 @@ class BlueSkyNotifier:
             if not account:
                 logger.error(f"Account not found: {handle}")
                 return False
-            
+
             account.active = not account.active
             db.session.commit()
-            
+
             status = "enabled" if account.active else "disabled"
             logger.info(f"Monitoring {status} for {handle}")
             return True
@@ -182,14 +191,16 @@ class BlueSkyNotifier:
             logger.error(f"Error toggling account status: {str(e)}")
             return False
 
-    def update_notification_preferences(self, handle: str, desktop: Optional[bool], email: Optional[bool]) -> bool:
+    def update_notification_preferences(
+        self, handle: str, desktop: Optional[bool], email: Optional[bool]
+    ) -> bool:
         """Update notification preferences for an account.
-        
+
         Args:
             handle: Account handle to update
             desktop: Enable/disable desktop notifications
             email: Enable/disable email notifications
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -198,17 +209,17 @@ class BlueSkyNotifier:
             if not account:
                 logger.error(f"Account not found: {handle}")
                 return False
-            
+
             prefs = account.notification_preferences
             if not prefs:
                 prefs = NotificationPreference(account_id=account.id)
                 db.session.add(prefs)
-            
+
             if desktop is not None:
                 prefs.desktop = desktop
             if email is not None:
                 prefs.email = email
-            
+
             db.session.commit()
             logger.info(f"Updated preferences for {handle}")
             return True
@@ -218,10 +229,10 @@ class BlueSkyNotifier:
 
     def remove_monitored_account(self, handle: str) -> bool:
         """Remove an account from monitoring.
-        
+
         Args:
             handle: Account handle to remove
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -238,13 +249,13 @@ class BlueSkyNotifier:
 
     async def _fetch_account_info(self, identifier):
         """Fetch account information from Bluesky API.
-        
+
         Args:
             identifier: Account handle or DID
-            
+
         Returns:
             dict: Account information including DID, handle, and profile
-            
+
         Raises:
             aiohttp.ClientError: If API request fails
         """
@@ -261,10 +272,10 @@ class BlueSkyNotifier:
 
     async def _check_new_posts(self, account):
         """Check for new posts from a monitored account.
-        
+
         Args:
             account: MonitoredAccount instance to check
-            
+
         Returns:
             list: New posts that haven't been notified about
         """
@@ -288,16 +299,17 @@ class BlueSkyNotifier:
                     try:
                         # Check if we've already notified about this post
                         existing_notification = NotifiedPost.query.filter_by(
-                            account_did=account.did,
-                            post_id=post_id
+                            account_did=account.did, post_id=post_id
                         ).first()
-                        
+
                         if existing_notification:
                             continue
 
                         # Get post timestamp
                         post_time = datetime.fromisoformat(
-                            post.get("post", {}).get("indexedAt", "").replace("Z", "+00:00")
+                            post.get("post", {})
+                            .get("indexedAt", "")
+                            .replace("Z", "+00:00")
                         )
 
                         # Skip if post is older than last check
@@ -318,11 +330,11 @@ class BlueSkyNotifier:
 
     def _format_notification(self, post, account):
         """Format post information for notification.
-        
+
         Args:
             post: Post data from Bluesky API
             account: MonitoredAccount instance
-            
+
         Returns:
             tuple: (title, message, url) for notification
         """
@@ -330,17 +342,19 @@ class BlueSkyNotifier:
             # Get post details
             text = post.get("post", {}).get("record", {}).get("text", "")
             post_uri = post.get("post", {}).get("uri", "")
-            
+
             # Convert URI to web URL
             if post_uri:
                 try:
                     _, _, _, _, post_rkey = post_uri.split("/")
-                    web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
-                    
+                    web_url = (
+                        f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
+                    )
+
                     # Format notification title and message
                     title = f"New post from {account.display_name or account.handle}"
                     message = text[:200] + ("..." if len(text) > 200 else "")
-                    
+
                     return title, message, web_url
                 except ValueError:
                     logger.error(f"Invalid post URI format: {post_uri}")
@@ -351,9 +365,9 @@ class BlueSkyNotifier:
 
     async def _send_notifications(self, new_posts, account):
         """Send notifications for new posts.
-        
+
         Handles both desktop and email notifications based on account preferences.
-        
+
         Args:
             new_posts: List of new posts to notify about
             account: MonitoredAccount instance
@@ -382,20 +396,18 @@ class BlueSkyNotifier:
                         try:
                             if pref.type == "desktop":
                                 desktop_sent = await self._send_notification_async(
-                                    title=title,
-                                    message=message,
-                                    url=url
+                                    title=title, message=message, url=url
                                 )
                                 notifications_sent = notifications_sent or desktop_sent
                             elif pref.type == "email":
                                 email_sent = self._send_email(
-                                    title=title,
-                                    message=message,
-                                    url=url
+                                    title=title, message=message, url=url
                                 )
                                 notifications_sent = notifications_sent or email_sent
                         except Exception as e:
-                            logger.error(f"Error sending {pref.type} notification: {str(e)}")
+                            logger.error(
+                                f"Error sending {pref.type} notification: {str(e)}"
+                            )
                             continue
 
                     # Only mark as notified if at least one notification was sent successfully
@@ -407,7 +419,7 @@ class BlueSkyNotifier:
 
     def list_accounts(self):
         """List all monitored accounts.
-        
+
         Returns:
             list: List of monitored account data (did, handle, display_name, avatar_url)
         """
@@ -422,24 +434,26 @@ class BlueSkyNotifier:
 
     async def get_profile(self, handle: str) -> dict:
         """Get profile information for a handle.
-        
+
         Args:
             handle: Bluesky handle to retrieve profile for
-            
+
         Returns:
             dict: Profile data (did, handle, display_name, avatar_url, description)
-            
+
         Raises:
             Exception: If API request fails
         """
         try:
-            data = await self._make_request("app.bsky.actor.getProfile", {"actor": handle})
+            data = await self._make_request(
+                "app.bsky.actor.getProfile", {"actor": handle}
+            )
             return {
                 "did": data.get("did"),
                 "handle": data.get("handle"),
                 "display_name": data.get("displayName", handle),
                 "avatar_url": data.get("avatar"),
-                "description": data.get("description", "")
+                "description": data.get("description", ""),
             }
         except Exception as e:
             logger.error(f"Failed to get profile for {handle}: {str(e)}")
@@ -447,33 +461,37 @@ class BlueSkyNotifier:
 
     async def get_recent_posts(self, handle: str) -> list:
         """Get recent posts for a handle.
-        
+
         Args:
             handle: Bluesky handle to retrieve posts for
-            
+
         Returns:
             list: List of recent post data (post_id, post_time, text, url)
-            
+
         Raises:
             Exception: If API request fails
         """
         try:
-            data = await self._make_request("app.bsky.feed.getAuthorFeed", {"actor": handle})
+            data = await self._make_request(
+                "app.bsky.feed.getAuthorFeed", {"actor": handle}
+            )
             return data.get("feed", [])
         except Exception as e:
             logger.error(f"Failed to get posts for {handle}: {str(e)}")
             return []
 
-    async def add_account(self, handle: str, notification_preferences: dict = None) -> dict:
+    async def add_account(
+        self, handle: str, notification_preferences: dict = None
+    ) -> dict:
         """Add a new account to monitor.
-        
+
         Args:
             handle: Bluesky handle to add
             notification_preferences: Optional notification preferences (desktop, email)
-            
+
         Returns:
             dict: Result data (success, error)
-            
+
         Raises:
             Exception: If API request fails
         """
@@ -496,29 +514,31 @@ class BlueSkyNotifier:
 
     def remove_account(self, identifier, by_did=False):
         """Remove a monitored account.
-        
+
         Args:
             identifier: Either the handle or DID of the account to remove
             by_did: If True, identifier is treated as a DID. If False, as a handle.
-            
+
         Returns:
             dict: Result data (success, error)
-            
+
         Raises:
             Exception: If database operation fails
         """
         try:
-            logger.info(f"Notifier removing account with {'DID' if by_did else 'handle'}: {identifier}")
-            
+            logger.info(
+                f"Notifier removing account with {'DID' if by_did else 'handle'}: {identifier}"
+            )
+
             with self.app.app_context():
                 result = remove_monitored_account(identifier, by_did)
                 logger.info(f"Database removal result: {result}")
-                
+
                 if "error" not in result:
                     handle = result["account"]["handle"]
                     logger.info(f"Removing {handle} from last_check cache")
                     self.last_check.pop(handle, None)
-                    
+
                 return result
 
         except Exception as e:
@@ -528,14 +548,14 @@ class BlueSkyNotifier:
 
     def update_preferences(self, handle: str, preferences: dict) -> dict:
         """Update notification preferences for an account.
-        
+
         Args:
             handle: Bluesky handle to update preferences for
             preferences: Notification preferences (desktop, email)
-            
+
         Returns:
             dict: Result data (success, error)
-            
+
         Raises:
             Exception: If database operation fails
         """
@@ -543,13 +563,15 @@ class BlueSkyNotifier:
             with self.app.app_context():
                 # Update preferences in database
                 result = update_notification_preferences(handle, preferences)
-                
+
                 # Log the result
                 if "error" in result:
-                    logger.error(f"Error updating preferences for {handle}: {result['error']}")
+                    logger.error(
+                        f"Error updating preferences for {handle}: {result['error']}"
+                    )
                 else:
                     logger.info(f"Successfully updated preferences for {handle}")
-                    
+
                 return result
 
         except Exception as e:
@@ -557,27 +579,33 @@ class BlueSkyNotifier:
             logger.error(error_msg)
             return {"error": error_msg}
 
-    async def _send_notification_async(self, title: str, message: str, url: str) -> bool:
+    async def _send_notification_async(
+        self, title: str, message: str, url: str
+    ) -> bool:
         """Send a desktop notification using desktop-notifier asynchronously.
-        
+
         Args:
             title: The notification title
             message: The notification message
             url: The URL to open when clicked
-            
+
         Returns:
             bool: True if notification was sent successfully, False otherwise
         """
         try:
             # Skip desktop notifications in Docker
-            if os.getenv('DOCKER_CONTAINER'):
+            if os.getenv("DOCKER_CONTAINER"):
                 logger.info("Skipping desktop notification in Docker environment")
                 return True
 
             # Clean and truncate the message
             clean_message = message.replace('"', "'")
-            truncated_message = clean_message[:140] + "..." if len(clean_message) > 140 else clean_message
-            
+            truncated_message = (
+                clean_message[:140] + "..."
+                if len(clean_message) > 140
+                else clean_message
+            )
+
             # Clean the title
             clean_title = title.replace('"', "'")
 
@@ -585,7 +613,7 @@ class BlueSkyNotifier:
             await self.notifier.send(
                 title=clean_title,
                 message=truncated_message,
-                on_clicked=lambda *args: webbrowser.open(url)
+                on_clicked=lambda *args: webbrowser.open(url),
             )
             return True
         except Exception as e:
@@ -594,12 +622,12 @@ class BlueSkyNotifier:
 
     def _send_email(self, title: str, message: str, url: str) -> bool:
         """Send an email notification using Mailgun.
-        
+
         Args:
             title: The email subject
             message: The email body
             url: The URL to the post
-            
+
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
@@ -607,13 +635,15 @@ class BlueSkyNotifier:
             import requests
 
             # Get Mailgun configuration
-            api_key = os.getenv('MAILGUN_API_KEY')
-            domain = os.getenv('MAILGUN_DOMAIN')
-            from_email = os.getenv('MAILGUN_FROM_EMAIL')
-            to_email = os.getenv('MAILGUN_TO_EMAIL')
+            api_key = os.getenv("MAILGUN_API_KEY")
+            domain = os.getenv("MAILGUN_DOMAIN")
+            from_email = os.getenv("MAILGUN_FROM_EMAIL")
+            to_email = os.getenv("MAILGUN_TO_EMAIL")
 
             if not all([api_key, domain, from_email, to_email]):
-                logger.debug("Mailgun configuration not complete, skipping email notification")
+                logger.debug(
+                    "Mailgun configuration not complete, skipping email notification"
+                )
                 return False
 
             # Create HTML body with clickable link
@@ -634,8 +664,8 @@ class BlueSkyNotifier:
                     "from": from_email,
                     "to": to_email,
                     "subject": title,
-                    "html": html
-                }
+                    "html": html,
+                },
             )
             response.raise_for_status()
 
@@ -648,7 +678,7 @@ class BlueSkyNotifier:
 
     async def run(self) -> None:
         """Run the notification service.
-        
+
         Continuously checks for new posts from monitored accounts and sends notifications.
         """
         self._running = True

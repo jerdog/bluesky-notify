@@ -2,35 +2,37 @@
 BlueSky Notification API Routes
 """
 
-from flask import Flask, Blueprint, jsonify, request, render_template
-from flask_cors import CORS
-from ..core.notifier import BlueSkyNotifier
-from ..core.database import db, MonitoredAccount
-from ..core.logger import get_logger
-from ..core.config import get_data_dir
 import asyncio
-import threading
 import os
-from datetime import datetime
 import pathlib
+import threading
+from datetime import datetime
+
+from flask import Blueprint, Flask, jsonify, render_template, request
+from flask_cors import CORS
+
+from ..core.config import get_data_dir
+from ..core.database import MonitoredAccount, db
+from ..core.logger import get_logger
+from ..core.notifier import BlueSkyNotifier
 
 # Get logger for API
-logger = get_logger('api')
+logger = get_logger("api")
 
 # Create Blueprint first
-bp = Blueprint('api', __name__)
+bp = Blueprint("api", __name__)
 
 # Initialize Flask app
-app = Flask(__name__, template_folder='../templates', static_folder='../static')
+app = Flask(__name__, template_folder="../templates", static_folder="../static")
 CORS(app)
 
 # Configure Flask app
 # Use consistent database path from config
 DB_PATH = pathlib.Path(get_data_dir())
 DB_PATH.mkdir(exist_ok=True)
-DB_FILE = DB_PATH / 'bluesky_notify.db'
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_FILE}'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+DB_FILE = DB_PATH / "bluesky_notify.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DB_FILE}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 logger.info(f"Using database at: {DB_FILE}")
 
@@ -46,6 +48,7 @@ with app.app_context():
 # Initialize notifier
 notifier = BlueSkyNotifier(app)
 
+
 def run_notifier():
     """Run the notifier in a background thread."""
     try:
@@ -57,12 +60,14 @@ def run_notifier():
     except Exception as e:
         logger.error(f"Notifier thread error: {str(e)}")
 
+
 # Start notifier in background thread
 notifier_thread = threading.Thread(target=run_notifier, daemon=True)
 notifier_thread.start()
 
+
 # API Routes
-@bp.route('/accounts', methods=['GET'])
+@bp.route("/accounts", methods=["GET"])
 def list_accounts():
     """List all monitored accounts."""
     try:
@@ -70,22 +75,28 @@ def list_accounts():
             # Ensure we're using a fresh session
             db.session.remove()
             accounts = notifier.list_accounts()
-            return jsonify({"data": {"accounts": [account.to_dict() for account in accounts]}}), 200
+            return (
+                jsonify(
+                    {"data": {"accounts": [account.to_dict() for account in accounts]}}
+                ),
+                200,
+            )
     except Exception as e:
         logger.error(f"Error listing accounts: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/accounts', methods=['POST'])
+
+@bp.route("/accounts", methods=["POST"])
 def add_account():
     """Add a new account to monitor."""
     try:
         data = request.get_json()
-        if not data or 'handle' not in data:
+        if not data or "handle" not in data:
             return jsonify({"error": "Handle is required"}), 400
 
-        handle = data['handle']
-        preferences = data.get('notification_preferences')
-        
+        handle = data["handle"]
+        preferences = data.get("notification_preferences")
+
         with app.app_context():
             # Run add_account in event loop
             loop = asyncio.new_event_loop()
@@ -101,7 +112,8 @@ def add_account():
         logger.error(f"Error adding account: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/accounts/<handle>', methods=['DELETE'])
+
+@bp.route("/accounts/<handle>", methods=["DELETE"])
 def remove_account(handle):
     """Remove a monitored account by handle."""
     try:
@@ -114,7 +126,8 @@ def remove_account(handle):
         logger.error(f"Error removing account: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/accounts/did/<did>', methods=['DELETE'])
+
+@bp.route("/accounts/did/<did>", methods=["DELETE"])
 def remove_account_by_did(did):
     """Remove a monitored account by DID."""
     logger.info(f"Received DELETE request for account with DID: {did}")
@@ -123,28 +136,31 @@ def remove_account_by_did(did):
             # Debug: Check if account exists first
             account = MonitoredAccount.query.filter_by(did=did).first()
             if account:
-                logger.info(f"Found account in database - DID: {account.did}, Handle: {account.handle}")
+                logger.info(
+                    f"Found account in database - DID: {account.did}, Handle: {account.handle}"
+                )
             else:
                 logger.warning(f"No account found with DID: {did}")
                 return jsonify({"error": f"Account with DID {did} not found"}), 404
-            
+
             # Try to remove the account
             result = notifier.remove_account(did, by_did=True)
             logger.info(f"Account removal result: {result}")
-            
+
             if "error" in result:
                 logger.warning(f"Error removing account: {result['error']}")
                 return jsonify({"error": result["error"]}), 400
-                
+
             logger.info("Account removed successfully")
             return jsonify({"data": result}), 200
-            
+
     except Exception as e:
         error_msg = f"Error removing account by DID: {str(e)}"
         logger.error(error_msg)
         return jsonify({"error": error_msg}), 500
 
-@bp.route('/accounts/<handle>/preferences', methods=['PUT'])
+
+@bp.route("/accounts/<handle>/preferences", methods=["PUT"])
 def update_preferences(handle):
     """Update notification preferences for an account."""
     try:
@@ -164,7 +180,8 @@ def update_preferences(handle):
         logger.error(f"Error updating preferences: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/accounts/<handle>/toggle', methods=['POST'])
+
+@bp.route("/accounts/<handle>/toggle", methods=["POST"])
 def toggle_account(handle):
     """Toggle monitoring status for an account."""
     try:
@@ -178,25 +195,25 @@ def toggle_account(handle):
         logger.error(f"Error toggling account: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/')
+
+@app.route("/")
 def index():
     """Serve the main page."""
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/health')
+
+@app.route("/health")
 def health_check():
     """Health check endpoint for Docker container."""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat()
-    }), 200
+    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()}), 200
+
 
 # Register blueprints
-app.register_blueprint(bp, url_prefix='/api')
+app.register_blueprint(bp, url_prefix="/api")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Use port 3001 for local development, 5001 for Docker
-    is_docker = os.path.exists('/.dockerenv')
+    is_docker = os.path.exists("/.dockerenv")
     default_port = 5001 if is_docker else 3001
-    port = int(os.environ.get('PORT', default_port))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    port = int(os.environ.get("PORT", default_port))
+    app.run(host="0.0.0.0", port=port, debug=True)
