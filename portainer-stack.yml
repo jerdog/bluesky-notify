@@ -1,0 +1,32 @@
+services:
+  bluesky-notify:
+    image: ${REGISTRY_URL}/bluesky-notify:latest
+    container_name: bluesky-notify
+    restart: unless-stopped
+    volumes:
+      - bluesky_data:/app/data
+      - bluesky_logs:/app/logs
+    env_file:
+      - .env
+    ports:
+      - "5001:5001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bluesky.rule=Host(`${DOMAIN:-bluesky.localhost}`)"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bluesky-network
+
+networks:
+  bluesky-network:
+    external: true
+
+volumes:
+  bluesky_data:
+    external: true
+  bluesky_logs:
+    external: true

@@ -1,8 +1,15 @@
 """
 Entry point for the Bluesky Notification Tracker application.
 """
+import os
+import sys
+
+# Add the src directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
+
 from bluesky_notify.core.config import load_config
 from bluesky_notify.core.logger import get_logger
+from bluesky_notify.core.settings import get_port
 from bluesky_notify.api.routes import app
 
 # Setup logging
@@ -14,9 +21,12 @@ if __name__ == "__main__":
         load_config()
         logger.info("Configuration loaded successfully")
         
+        # Get the appropriate port for this environment
+        port = get_port()
+        logger.info(f"Starting server on port {port}")
+        
         # Start the application
         logger.info("Starting Bluesky Notification Tracker...")
-        app.run(host="0.0.0.0", port=3001, debug=True)
+        app.run(host="0.0.0.0", port=port, debug=True)
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}")
-        raise
