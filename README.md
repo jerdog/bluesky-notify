@@ -219,6 +219,13 @@ The application is structured into several core components:
    mypy src/
    ```
 
+## TODO
+
+- Add GitHub Actions testing
+- Streamline code where necessary/possible
+- Verify notifications across platforms
+- 
+
 ## Contributing
 
 1. Fork the repository
