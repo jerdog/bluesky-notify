@@ -581,7 +581,16 @@ class BlueSkyNotifier:
             # Clean the title
             clean_title = title.replace('"', "'")
 
-            # Send notification using desktop-notifier
+            # Use terminal-notifier on macOS
+            if os.uname().sysname == 'Darwin':
+                try:
+                    os.system(f'terminal-notifier -title "{clean_title}" -message "{truncated_message}" -open "{url}"')
+                    return True
+                except Exception as e:
+                    logger.error(f"Error using terminal-notifier: {str(e)}")
+                    # Fall back to desktop-notifier if terminal-notifier fails
+            
+            # Use desktop-notifier for other platforms or if terminal-notifier fails
             await self.notifier.send(
                 title=clean_title,
                 message=truncated_message,
