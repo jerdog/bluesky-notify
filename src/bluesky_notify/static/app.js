@@ -49,10 +49,12 @@ async function handleAddAccount(event) {
     const desktopNotif = document.getElementById('desktopNotif').checked;
     const emailNotif = document.getElementById('emailNotif').checked;
 
-    // Remove @ if present
+    // Remove @ if present and clean invisible characters
     if (handle.startsWith('@')) {
         handle = handle.substring(1);
     }
+    // Clean invisible characters and normalize
+    handle = handle.replace(/[\u200B-\u200D\u202A-\u202E\uFEFF]/g, '').normalize();
 
     // Basic handle validation
     if (!handle) {
@@ -60,10 +62,10 @@ async function handleAddAccount(event) {
         return;
     }
 
-    // Validate handle format (alphanumeric, dots, and hyphens allowed)
-    const handleRegex = /^[a-zA-Z0-9.-]+$/;
+    // Validate handle format
+    const handleRegex = /^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])*$/;
     if (!handleRegex.test(handle)) {
-        showNotification('Invalid handle format. Only letters, numbers, dots, and hyphens are allowed', 'error');
+        showNotification('Please enter a valid Bluesky handle (e.g., user.bsky.social)', 'error');
         return;
     }
     

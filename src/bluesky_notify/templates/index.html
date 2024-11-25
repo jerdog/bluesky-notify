@@ -30,8 +30,8 @@
                                        id="handle" 
                                        class="form-control" 
                                        placeholder="Enter Bluesky handle (e.g., user.bsky.social)" 
-                                       pattern="[a-zA-Z0-9.-]+"
-                                       title="Only letters, numbers, dots, and hyphens are allowed"
+                                       pattern="[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])*"
+                                       title="Enter a valid Bluesky handle (e.g., user.bsky.social)"
                                        required>
                                 <button type="submit" class="btn btn-primary">Add Account</button>
                             </div>
