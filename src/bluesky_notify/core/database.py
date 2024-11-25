@@ -55,6 +55,29 @@ class MonitoredAccount(db.Model):
         cascade='all, delete-orphan'
     )
 
+    def to_dict(self):
+        """Convert the account to a dictionary for JSON serialization.
+        
+        Returns:
+            dict: Account data in dictionary format
+        """
+        # Create a dictionary of notification preferences
+        preferences = {}
+        for pref in self.notification_preferences:
+            preferences[pref.type] = pref.enabled
+
+        return {
+            'id': self.id,
+            'did': self.did,
+            'handle': self.handle,
+            'display_name': self.display_name,
+            'avatar_url': self.avatar_url,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'notification_preferences': preferences
+        }
+
 class NotificationPreference(db.Model):
     """Notification preferences for accounts.
     
@@ -93,6 +116,50 @@ class NotifiedPost(db.Model):
         UniqueConstraint('account_did', 'post_id', name='uq_account_post'),
     )
 
+def add_monitored_account(profile_data, notification_preferences=None):
+    """Add a new monitored account.
+    
+    Args:
+        profile_data (dict): Account profile data containing did, handle, etc.
+        notification_preferences (dict, optional): Dict of notification preferences
+        
+    Returns:
+        dict: Result data with account info or error message
+    """
+    try:
+        # Check if account already exists
+        existing = MonitoredAccount.query.filter_by(did=profile_data['did']).first()
+        if existing:
+            return {"error": f"Account {profile_data['handle']} already exists"}
+            
+        # Create new account
+        account = MonitoredAccount(
+            did=profile_data['did'],
+            handle=profile_data['handle'],
+            display_name=profile_data.get('display_name'),
+            avatar_url=profile_data.get('avatar_url'),
+            is_active=True
+        )
+        
+        # Add notification preferences
+        if notification_preferences:
+            for pref_type, enabled in notification_preferences.items():
+                pref = NotificationPreference(
+                    type=pref_type,
+                    enabled=enabled
+                )
+                account.notification_preferences.append(pref)
+        
+        db.session.add(account)
+        db.session.commit()
+        
+        return {"message": "Account added successfully", "account": account.to_dict()}
+        
+    except Exception as e:
+        logger.error(f"Error adding monitored account: {e}")
+        db.session.rollback()
+        return {"error": f"Error adding account: {str(e)}"}
+
 def get_monitored_accounts():
     """Get all monitored accounts with their preferences.
     
@@ -100,93 +167,149 @@ def get_monitored_accounts():
         list: List of MonitoredAccount objects with loaded preferences
     """
     try:
-        return MonitoredAccount.query.options(
+        accounts = MonitoredAccount.query.options(
             joinedload(MonitoredAccount.notification_preferences)
         ).all()
+        return accounts
     except Exception as e:
-        logger.error(f"Error fetching monitored accounts: {str(e)}")
+        logger.error(f"Error fetching monitored accounts: {e}")
         return []
 
-def add_monitored_account(account_info, notification_preferences=None):
-    """Add a new monitored account.
+def list_monitored_accounts():
+    """List all monitored accounts with their preferences.
     
-    Args:
-        account_info: Dict containing account information (did, handle, etc.)
-        notification_preferences: Optional list of notification preferences
-        
     Returns:
-        dict: Result of the operation
+        list: List of MonitoredAccount objects with loaded preferences
     """
     try:
-        # Check if account already exists
-        existing = MonitoredAccount.query.filter_by(did=account_info['did']).first()
-        if existing:
-            return {"error": "Account already being monitored"}
-
-        # Create new account
-        account = MonitoredAccount(
-            did=account_info['did'],
-            handle=account_info['handle'],
-            avatar_url=account_info.get('avatar_url'),
-            display_name=account_info.get('display_name')
-        )
-
-        # Add default notification preferences if none provided
-        if not notification_preferences:
-            notification_preferences = [
-                {"type": "desktop", "enabled": True},
-                {"type": "email", "enabled": False}
-            ]
-
-        # Add notification preferences
-        for pref in notification_preferences:
-            account.notification_preferences.append(
-                NotificationPreference(
-                    type=pref['type'],
-                    enabled=pref['enabled']
-                )
-            )
-
-        db.session.add(account)
-        db.session.commit()
-
-        return {"success": True, "account": account}
-
+        accounts = MonitoredAccount.query.options(
+            joinedload(MonitoredAccount.notification_preferences)
+        ).all()
+        return accounts
     except Exception as e:
+        logger.error(f"Error listing monitored accounts: {e}")
+        return []
+
+def toggle_account_status(handle):
+    """Toggle monitoring status for an account.
+    
+    Args:
+        handle (str): Account handle to toggle
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        account = MonitoredAccount.query.filter_by(handle=handle).first()
+        if not account:
+            return False
+            
+        account.is_active = not account.is_active
+        db.session.commit()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error toggling account status: {e}")
         db.session.rollback()
-        logger.error(f"Error adding monitored account: {str(e)}")
+        return False
+
+def update_notification_preferences(handle, preferences):
+    """Update notification preferences for an account.
+    
+    Args:
+        handle (str): Account handle to update
+        preferences (dict): Dict of notification preferences (e.g., {'desktop': True, 'email': False})
+        
+    Returns:
+        dict: Result data with account info or error message
+    """
+    try:
+        logger.info(f"Updating preferences for {handle} with {preferences}")
+        
+        # Ensure we're using a fresh session
+        db.session.remove()
+        
+        account = MonitoredAccount.query.filter_by(handle=handle).first()
+        if not account:
+            logger.error(f"Account not found: {handle}")
+            return {"error": "Account not found"}
+            
+        logger.info(f"Current preferences for {handle}: {[{'type': p.type, 'enabled': p.enabled} for p in account.notification_preferences]}")
+            
+        # Update existing preferences
+        updated = False
+        for pref in account.notification_preferences:
+            if pref.type in preferences:
+                old_value = pref.enabled
+                pref.enabled = preferences[pref.type]
+                logger.info(f"Updating {pref.type} preference for {handle}: {old_value} -> {pref.enabled}")
+                updated = True
+                db.session.add(pref)
+        
+        # Add any missing preferences
+        existing_types = {pref.type for pref in account.notification_preferences}
+        for pref_type, enabled in preferences.items():
+            if pref_type not in existing_types:
+                logger.info(f"Adding new {pref_type} preference for {handle}: {enabled}")
+                new_pref = NotificationPreference(
+                    account=account,
+                    type=pref_type,
+                    enabled=enabled
+                )
+                db.session.add(new_pref)
+                updated = True
+                
+        if not updated:
+            logger.warning(f"No preferences were updated for {handle}")
+            
+        # Commit changes and refresh account
+        db.session.commit()
+        db.session.refresh(account)
+        
+        logger.info(f"Updated preferences for {handle}: {[{'type': p.type, 'enabled': p.enabled} for p in account.notification_preferences]}")
+        
+        return {
+            "message": "Preferences updated successfully",
+            "account": account.to_dict()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating notification preferences: {e}")
+        db.session.rollback()
         return {"error": str(e)}
 
 def remove_monitored_account(identifier, by_did=False):
     """Remove a monitored account.
     
     Args:
-        identifier: Either the handle or DID of the account to remove
-        by_did: If True, identifier is treated as a DID. If False, as a handle.
+        identifier (str): Account handle or DID to remove
+        by_did (bool): If True, identifier is treated as a DID. If False, as a handle.
         
     Returns:
-        dict: Result of the operation
+        dict: Result data with account info or error message
     """
     try:
-        # Find account
         if by_did:
             account = MonitoredAccount.query.filter_by(did=identifier).first()
         else:
             account = MonitoredAccount.query.filter_by(handle=identifier).first()
-
+            
         if not account:
-            return {"error": "Account not found"}
-
-        # Remove account and its preferences
+            return {"error": f"Account not found with {'DID' if by_did else 'handle'}: {identifier}"}
+        
+        # Store account info before deletion for return value
+        account_info = account.to_dict()
+        
+        # Delete the account
         db.session.delete(account)
         db.session.commit()
-
-        return {"success": True}
-
+        
+        return {"message": "Account removed successfully", "account": account_info}
+        
     except Exception as e:
+        logger.error(f"Error removing monitored account: {e}")
         db.session.rollback()
-        logger.error(f"Error removing monitored account: {str(e)}")
-        return {"error": str(e)}
+        return {"error": f"Error removing account: {str(e)}"}
 
 def mark_post_notified(account_did: str, post_id: str) -> bool:
     """Mark a post as having been notified about.

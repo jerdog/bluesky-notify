@@ -8,6 +8,9 @@ services:
       - ./logs:/app/logs:Z
     env_file:
       - .env
+    environment:
+      - DOCKER_CONTAINER=true
+      - NOTIFICATION_METHOD=email
     ports:
       - "5001:5001"
     labels:

@@ -5,8 +5,9 @@ BlueSky Notification API Routes
 from flask import Flask, Blueprint, jsonify, request, render_template
 from flask_cors import CORS
 from ..core.notifier import BlueSkyNotifier
-from ..core.database import db, init_db, MonitoredAccount
+from ..core.database import db, MonitoredAccount
 from ..core.logger import get_logger
+from ..core.config import get_data_dir
 import asyncio
 import threading
 import os
@@ -24,8 +25,8 @@ app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app)
 
 # Configure Flask app
-# Use package-relative path for database
-DB_PATH = pathlib.Path(__file__).parent.parent / 'data'
+# Use consistent database path from config
+DB_PATH = pathlib.Path(get_data_dir())
 DB_PATH.mkdir(exist_ok=True)
 DB_FILE = DB_PATH / 'bluesky_notify.db'
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_FILE}'
@@ -38,7 +39,7 @@ db.init_app(app)
 with app.app_context():
     if not DB_FILE.exists():
         logger.info("Creating new database")
-        init_db(app)
+        db.create_all()
     else:
         logger.info("Using existing database")
 
@@ -66,8 +67,10 @@ def list_accounts():
     """List all monitored accounts."""
     try:
         with app.app_context():
+            # Ensure we're using a fresh session
+            db.session.remove()
             accounts = notifier.list_accounts()
-            return jsonify({"data": {"accounts": accounts}}), 200
+            return jsonify({"data": {"accounts": [account.to_dict() for account in accounts]}}), 200
     except Exception as e:
         logger.error(f"Error listing accounts: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -150,10 +153,12 @@ def update_preferences(handle):
             return jsonify({"error": "Notification preferences required"}), 400
 
         with app.app_context():
+            # Ensure we're using a fresh session
+            db.session.remove()
             result = notifier.update_preferences(handle, data)
             if "error" in result:
                 return jsonify({"error": result["error"]}), 404
-            return jsonify({"data": result})
+            return jsonify({"data": result}), 200
 
     except Exception as e:
         logger.error(f"Error updating preferences: {str(e)}")
