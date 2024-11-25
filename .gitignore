@@ -9,6 +9,10 @@ venv/
 # Database
 data/*.db
 data/backups/*.db*
+src/data/*.db
+src/data/backups/*.db*
+src/bluesky_notify/data/*.db
+src/bluesky_notify/data/backups/*.db*
 
 # Logs
 logs/
