@@ -1,0 +1,25 @@
+services:
+  bluesky-notify:
+    build: .
+    container_name: bluesky-notify
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data:Z
+      - ./logs:/app/logs:Z
+    env_file:
+      - .env
+    ports:
+      - "5001:5001"
+    labels:
+      - "io.podman.annotations.autoremove=false"
+      - "io.podman.annotations.init=true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    name: bluesky-network
+    driver: bridge

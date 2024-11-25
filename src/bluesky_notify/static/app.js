@@ -1,6 +1,7 @@
 // Constants and Utilities
 const BSKY_BASE_URL = 'https://bsky.app/profile/';
 const API_BASE_URL = '/api';
+const REFRESH_INTERVAL = 5000; // 5 seconds
 
 // Check if the browser supports passive event listeners
 let supportsPassive = false;
@@ -18,6 +19,7 @@ document.addEventListener('wheel', function(){}, supportsPassive ? {passive: tru
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     loadAccounts();
+    startPeriodicRefresh();
     
     // Add account form submission
     const addAccountForm = document.getElementById('addAccountForm');
@@ -122,6 +124,7 @@ async function loadAccounts() {
         
         accounts.forEach(account => {
             const row = document.createElement('tr');
+            row.dataset.handle = account.handle;
             
             // Account info cell
             const accountCell = document.createElement('td');
@@ -148,7 +151,7 @@ async function loadAccounts() {
             const desktopEnabled = account.notification_preferences?.desktop ?? false;
             desktopCell.innerHTML = `
                 <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch" 
+                    <input class="form-check-input" type="checkbox" role="switch" data-type="desktop" 
                            ${desktopEnabled ? 'checked' : ''} 
                            onchange="toggleNotification('${account.handle}', 'desktop', this.checked)">
                 </div>
@@ -159,7 +162,7 @@ async function loadAccounts() {
             const emailEnabled = account.notification_preferences?.email ?? false;
             emailCell.innerHTML = `
                 <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch" 
+                    <input class="form-check-input" type="checkbox" role="switch" data-type="email" 
                            ${emailEnabled ? 'checked' : ''} 
                            onchange="toggleNotification('${account.handle}', 'email', this.checked)">
                 </div>
@@ -187,50 +190,128 @@ async function loadAccounts() {
     }
 }
 
+// Add periodic refresh of accounts
+function startPeriodicRefresh() {
+    setInterval(async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/accounts`);
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to refresh accounts');
+            }
+            
+            if (data.data && data.data.accounts) {
+                updateAccountsTable(data.data.accounts);
+            }
+        } catch (error) {
+            console.error('Error refreshing accounts:', error);
+        }
+    }, REFRESH_INTERVAL);
+}
+
+// Update accounts table without full reload
+function updateAccountsTable(accounts) {
+    const accountsTable = document.getElementById('accountsTableBody');
+    if (!accountsTable) return;
+
+    accounts.forEach(account => {
+        const existingRow = document.querySelector(`tr[data-handle="${account.handle}"]`);
+        if (existingRow) {
+            // Update preferences in existing row
+            const desktopCheckbox = existingRow.querySelector('input[data-type="desktop"]');
+            const emailCheckbox = existingRow.querySelector('input[data-type="email"]');
+            
+            if (desktopCheckbox && account.notification_preferences) {
+                desktopCheckbox.checked = account.notification_preferences.desktop || false;
+            }
+            if (emailCheckbox && account.notification_preferences) {
+                emailCheckbox.checked = account.notification_preferences.email || false;
+            }
+        }
+    });
+}
+
 // Toggle notification settings
 async function toggleNotification(handle, type, enabled) {
     try {
+        // Get the current state of both checkboxes
+        const row = document.querySelector(`tr[data-handle="${handle}"]`);
+        const desktopCheckbox = row.querySelector('input[data-type="desktop"]');
+        const emailCheckbox = row.querySelector('input[data-type="email"]');
+        
+        // Create preferences object with both settings
+        const preferences = {
+            desktop: desktopCheckbox.checked,
+            email: emailCheckbox.checked
+        };
+        
+        // Override the toggled preference
+        preferences[type] = enabled;
+        
+        console.log(`Updating preferences for ${handle}:`, preferences);
+        
         const response = await fetch(`${API_BASE_URL}/accounts/${handle}/preferences`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                [type]: enabled
-            })
+            body: JSON.stringify(preferences)
         });
 
+        const data = await response.json();
+        
         if (!response.ok) {
-            throw new Error('Failed to update notification settings');
+            throw new Error(data.error || 'Failed to update notification settings');
+        }
+
+        // Update UI with the returned data
+        if (data.data && data.data.account && data.data.account.notification_preferences) {
+            const prefs = data.data.account.notification_preferences;
+            desktopCheckbox.checked = prefs.desktop || false;
+            emailCheckbox.checked = prefs.email || false;
+            console.log('Updated UI with preferences:', prefs);
+        } else {
+            console.warn('No preference data in response:', data);
         }
 
         showNotification('Notification settings updated');
     } catch (error) {
         console.error('Error updating notification settings:', error);
-        showNotification('Failed to update notification settings', 'error');
-        await loadAccounts(); // Reload to reset the UI state
+        showNotification(error.message || 'Failed to update notification settings', 'error');
+        
+        // Revert checkbox state
+        const checkbox = row.querySelector(`input[data-type="${type}"]`);
+        if (checkbox) {
+            checkbox.checked = !enabled;
+        }
     }
 }
 
 // Remove an account
 async function removeAccount(did) {
+    // Add confirmation dialog
     if (!confirm('Are you sure you want to remove this account?')) {
         return;
     }
-    
+
     try {
-        const response = await fetch(`${API_BASE_URL}/accounts/${did}`, {
+        const response = await fetch(`/api/accounts/did/${did}`, {
             method: 'DELETE'
         });
-
+        
         if (!response.ok) {
-            throw new Error('Failed to remove account');
+            const data = await response.json();
+            throw new Error(data.error || 'Failed to remove account');
         }
 
-        await loadAccounts();
+        // Show success message
         showNotification('Account removed successfully');
+        
+        // Refresh the accounts list
+        await loadAccounts();
     } catch (error) {
         console.error('Error removing account:', error);
-        showNotification('Failed to remove account', 'error');
+        showNotification(error.message, 'error');
     }
 }

@@ -1,0 +1,29 @@
+services:
+  bluesky-notify:
+    build: .
+    container_name: bluesky-notify
+    restart: unless-stopped
+    volumes:
+      - ./src/bluesky_notify/data:/app/src/bluesky_notify/data:Z
+      - ./logs:/app/logs:Z
+    env_file:
+      - .env
+    environment:
+      - DOCKER_CONTAINER=true
+      - NOTIFICATION_METHOD=email
+    ports:
+      - "5001:5001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bluesky.rule=Host(`bluesky.localhost`)"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    name: bluesky-network
+    driver: bridge
