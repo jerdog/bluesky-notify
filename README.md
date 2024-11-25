@@ -30,7 +30,7 @@ A cross-platform notification system for tracking and receiving alerts about new
 
 ### Option 1: Local Installation
 
-1. Clone the repository:
+1. [Fork](https://github.com/jerdog/bluesky-notify/fork) and then Clone the repository:
    ```bash
    git clone <repository-url>
    cd bluesky-notify
@@ -59,7 +59,7 @@ A cross-platform notification system for tracking and receiving alerts about new
    # Flask configuration
    FLASK_APP=src/bluesky_notify
    FLASK_ENV=development
-   SECRET_KEY=your-secret-key
+   SECRET_KEY=your-secret-key ## ex: `npx node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 
    # Database configuration
    DATABASE_URL=sqlite:///data/bluesky_notify.db
