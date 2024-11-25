@@ -88,6 +88,8 @@ A cross-platform notification system for tracking and receiving alerts about new
 
 ## Usage
 
+### Web Interface
+
 1. Start the application:
    ```bash
    flask run
@@ -100,10 +102,82 @@ A cross-platform notification system for tracking and receiving alerts about new
    - Configure notification preferences
    - Click "Add Account"
 
-4. Monitor logs for notification activity:
+### CLI Commands
+
+The application provides a command-line interface for managing monitored accounts:
+
+```bash
+# Add an account to monitor
+python -m bluesky_notify.cli.commands add @handle.bsky.social [--desktop/--no-desktop] [--email/--no-email]
+
+# List monitored accounts
+python -m bluesky_notify.cli.commands list
+
+# Toggle monitoring status
+python -m bluesky_notify.cli.commands toggle @handle.bsky.social
+
+# Update notification preferences
+python -m bluesky_notify.cli.commands update @handle.bsky.social [--desktop/--no-desktop] [--email/--no-email]
+
+# Remove an account
+python -m bluesky_notify.cli.commands remove @handle.bsky.social
+
+# Update settings
+python -m bluesky_notify.cli.commands settings [--interval SECONDS] [--log-level LEVEL]
+
+# Start the notification service
+python -m bluesky_notify.cli.commands start
+```
+
+### Docker Usage
+
+1. Build and start the container:
    ```bash
-   tail -f logs/notifier.log
+   docker-compose up -d --build
    ```
+
+2. View logs:
+   ```bash
+   docker-compose logs -f
+   ```
+
+3. Stop the container:
+   ```bash
+   docker-compose down
+   ```
+
+The Docker container uses a volume mount to persist data in `./src/bluesky_notify/data/bluesky_notify.db`. This ensures your monitored accounts and preferences are preserved between container restarts.
+
+## Data Storage
+
+The application stores its data in the following locations:
+
+- Local installation: `./src/bluesky_notify/data/bluesky_notify.db`
+- Docker installation: Volume mounted at `./src/bluesky_notify/data/bluesky_notify.db`
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Database Errors**
+   - Ensure the data directory exists: `./src/bluesky_notify/data`
+   - Check file permissions
+   - For Docker: verify volume mount paths
+
+2. **Notification Issues**
+   - Desktop notifications: Check system notification settings
+   - Email notifications: Verify Mailgun credentials
+   - Docker desktop notifications: Only supported on Linux host with proper setup
+
+3. **Authentication Errors**
+   - Verify Bluesky credentials in `.env`
+   - Check network connectivity
+   - Ensure rate limits haven't been exceeded
+
+### Logs
+
+- Application logs: `./logs/bluesky_notify.log`
+- Docker logs: `docker-compose logs -f`
 
 ## API Endpoints
 
@@ -150,12 +224,13 @@ The application is structured into several core components:
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run tests
-5. Submit a pull request
+4. Submit a pull request
+
+Please include tests and documentation updates with your changes.
 
 ## License
 
-MIT License - see LICENSE file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
