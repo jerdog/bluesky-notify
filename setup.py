@@ -1,11 +1,18 @@
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 setup(
     name="bluesky-notify",
     version="0.1.0",
-    packages=find_packages(where="src"),
+    packages=find_namespace_packages(where="src", include=["bluesky_notify*"]),
     package_dir={"": "src"},
     include_package_data=True,
+    package_data={
+        "bluesky_notify": [
+            "data/*",
+            "templates/*",
+            "static/*",
+        ],
+    },
     install_requires=[
         "flask>=2.0.0",
         "flask-cors>=4.0.0",

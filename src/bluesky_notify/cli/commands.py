@@ -99,9 +99,15 @@ def toggle(handle):
 @click.option('--desktop/--no-desktop', help='Enable/disable desktop notifications')
 @click.option('--email/--no-email', help='Enable/disable email notifications')
 def update(handle, desktop, email):
-    """Update notification preferences"""
+    """Update notification preferences for an account"""
     with app.app_context():
-        if update_notification_preferences(handle, desktop, email):
+        prefs = {}
+        if desktop is not None:
+            prefs['desktop'] = desktop
+        if email is not None:
+            prefs['email'] = email
+            
+        if update_notification_preferences(handle, prefs):
             console.print(f"[green]Successfully updated preferences for {handle}[/green]")
         else:
             console.print(f"[red]Failed to update preferences for {handle}[/red]")
@@ -118,46 +124,45 @@ def remove(handle):
 
 @cli.command()
 @click.option('--interval', type=int, help='Check interval in seconds')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR']), help='Logging level')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], case_sensitive=False))
 def settings(interval, log_level):
     """View or update application settings"""
     settings = Settings()
     
+    if interval is not None:
+        settings.check_interval = interval
+        console.print(f"[green]Updated check interval to {interval} seconds[/green]")
+    
+    if log_level is not None:
+        settings.log_level = log_level.upper()
+        console.print(f"[green]Updated log level to {log_level.upper()}[/green]")
+    
     if interval is None and log_level is None:
         # Display current settings
-        current = settings.get_settings()
-        console.print("\n[bold]Current Settings:[/bold]")
-        console.print(f"Check Interval: {current.get('check_interval', 60)} seconds")
-        console.print(f"Log Level: {current.get('log_level', 'INFO')}")
-        return
-
-    # Update settings
-    updates = {}
-    if interval is not None:
-        updates['check_interval'] = interval
-    if log_level is not None:
-        updates['log_level'] = log_level
-
-    if settings.update_settings(updates):
-        console.print("[green]Successfully updated settings[/green]")
-    else:
-        console.print("[red]Failed to update settings[/red]")
+        console.print("\nCurrent Settings:")
+        console.print(f"Check Interval: {settings.check_interval} seconds")
+        console.print(f"Log Level: {settings.log_level}")
 
 @cli.command()
 def start():
     """Start the notification service"""
-    console.print("[yellow]Starting Bluesky notification service...[/yellow]")
-    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
-    
-    notifier = BlueSkyNotifier()
-    if not notifier.authenticate():
-        console.print("[red]Failed to authenticate with Bluesky[/red]")
-        return
-    
-    try:
-        notifier.run()
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Stopping notification service...[/yellow]")
+    with app.app_context():
+        notifier = BlueSkyNotifier()
+        if not notifier.authenticate():
+            console.print("[red]Failed to authenticate with Bluesky[/red]")
+            return
+        
+        console.print("[green]Starting Bluesky notification service...[/green]")
+        try:
+            notifier.start_monitoring()
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Shutting down notification service...[/yellow]")
+        except Exception as e:
+            console.print(f"[red]Error in notification service: {e}[/red]")
+
+# Export the CLI function as main for the entry point
+def main():
+    cli()
 
 if __name__ == '__main__':
-    cli()
+    main()
