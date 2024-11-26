@@ -52,3 +52,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Run the application
 CMD ["python", "run.py"]
+
+# Set labels
+LABEL org.opencontainers.image.source="https://github.com/jerdog/bluesky-notify"
+LABEL org.opencontainers.image.description="A cross-platform notification system for tracking and receiving alerts about new Bluesky social media posts."
+LABEL org.opencontainers.image.licenses="MIT"
