@@ -92,10 +92,12 @@ A cross-platform notification system for tracking and receiving alerts about new
 
 1. Start the application:
    ```bash
-   flask run
+   python run.py
    ```
 
-2. Access the web interface at `http://localhost:5000`
+2. Access the web interface at:
+  - DOCKER: `http://localhost:5001`
+  - LOCAL: `https://localhost:3000`
 
 3. Add accounts to monitor:
    - Enter a Bluesky handle (e.g., @user.bsky.social)

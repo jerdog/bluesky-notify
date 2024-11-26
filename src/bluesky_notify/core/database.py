@@ -37,6 +37,7 @@ class MonitoredAccount(db.Model):
         is_active: Whether the account is currently being monitored
         created_at: When the account was added to monitoring
         updated_at: When the account was last updated
+        last_check: When we last checked for posts
         notification_preferences: Related NotificationPreference objects
     """
     __tablename__ = 'monitored_accounts'
@@ -49,6 +50,7 @@ class MonitoredAccount(db.Model):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_check = Column(DateTime, nullable=True)  # Track when we last checked for posts
     notification_preferences = relationship(
         'NotificationPreference',
         back_populates='account',
@@ -75,6 +77,7 @@ class MonitoredAccount(db.Model):
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_check': self.last_check.isoformat() if self.last_check else None,
             'notification_preferences': preferences
         }
 
@@ -322,27 +325,22 @@ def mark_post_notified(account_did: str, post_id: str) -> bool:
         bool: True if post was marked as notified, False if already notified
     """
     try:
-        # Check if already notified
-        existing = NotifiedPost.query.filter_by(
-            account_did=account_did,
-            post_id=post_id
-        ).first()
-        
-        if existing:
-            return False
-
-        # Add notification record
+        # Try to insert directly - this is more efficient and handles race conditions
         notification = NotifiedPost(
             account_did=account_did,
             post_id=post_id
         )
         db.session.add(notification)
         db.session.commit()
-        
         return True
 
     except Exception as e:
         db.session.rollback()
+        # Check if this was a unique constraint violation
+        if isinstance(e, db.exc.IntegrityError) and "UNIQUE constraint failed" in str(e):
+            # This is expected when the post was already notified about
+            return False
+        # Log other unexpected errors
         logger.error(f"Error marking post as notified: {str(e)}")
         return False
 
