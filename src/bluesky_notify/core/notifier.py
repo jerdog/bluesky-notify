@@ -43,7 +43,6 @@ class BlueSkyNotifier:
         self.base_url = "https://public.api.bsky.app/xrpc"
         self.check_interval = 60  # seconds
         self._running = False
-        self.last_check = {}
         self.notifier = DesktopNotifier()
         self.loop = None
         self._session = None
@@ -270,13 +269,24 @@ class BlueSkyNotifier:
         """
         try:
             posts = await self.get_recent_posts(account.handle)
-            last_check = self.last_check.get(account.handle)
+            current_time = datetime.now(timezone.utc)
+            logger.debug(f"Current time (UTC): {current_time}")
 
             with self.app.app_context():
                 # Refresh account to get notification preferences within session
                 account = MonitoredAccount.query.get(account.id)
                 if not account:
                     logger.error(f"Account {account.handle} not found in database")
+                    return []
+
+                logger.debug(f"Account {account.handle} last_check: {account.last_check}")
+                logger.debug(f"Account {account.handle} last_check tzinfo: {account.last_check.tzinfo if account.last_check else None}")
+
+                # If this is the first check, only notify about future posts
+                if not account.last_check:
+                    account.last_check = current_time.replace(tzinfo=None)  # Store as naive UTC
+                    db.session.commit()
+                    logger.debug(f"First check for {account.handle}, set last_check to: {account.last_check}")
                     return []
 
                 new_posts = []
@@ -295,115 +305,41 @@ class BlueSkyNotifier:
                         if existing_notification:
                             continue
 
-                        # Get post timestamp
+                        # Get post timestamp as UTC
                         post_time = datetime.fromisoformat(
                             post.get("post", {}).get("indexedAt", "").replace("Z", "+00:00")
                         )
+                        logger.debug(f"Post time (with TZ): {post_time}")
+                        logger.debug(f"Post time tzinfo: {post_time.tzinfo}")
 
-                        # Skip if post is older than last check
-                        if last_check and post_time <= last_check:
-                            continue
+                        # Convert to naive UTC for comparison
+                        post_time_utc = post_time.astimezone(timezone.utc).replace(tzinfo=None)
+                        logger.debug(f"Post time (naive UTC): {post_time_utc}")
 
-                        new_posts.append(post)
+                        # Compare naive UTC datetimes
+                        logger.debug(f"Comparing post_time_utc ({post_time_utc}) > last_check ({account.last_check})")
+                        if post_time_utc > account.last_check:
+                            logger.debug(f"Post is newer than last check")
+                            new_posts.append(post)
+                        else:
+                            logger.debug(f"Post is older than last check")
 
-                    except Exception as e:
-                        logger.error(f"Error processing post {post_id}: {str(e)}")
+                    except (ValueError, TypeError, AttributeError) as e:
+                        logger.error(f"Error parsing post time: {str(e)}")
+                        logger.error(f"Post data: {post.get('post', {})}")
                         continue
+
+                # Update last check time (store as naive UTC)
+                account.last_check = current_time.replace(tzinfo=None)
+                db.session.commit()
+                logger.debug(f"Updated last_check for {account.handle} to: {account.last_check}")
 
                 return new_posts
 
         except Exception as e:
             logger.error(f"Error checking posts for {account.handle}: {str(e)}")
+            logger.exception(e)  # Log full traceback
             return []
-
-    def _format_notification(self, post, account):
-        """Format post information for notification.
-        
-        Args:
-            post: Post data from Bluesky API
-            account: MonitoredAccount instance
-            
-        Returns:
-            tuple: (title, message, url) for notification
-        """
-        try:
-            # Get post details
-            text = post.get("post", {}).get("record", {}).get("text", "")
-            post_uri = post.get("post", {}).get("uri", "")
-            
-            # Convert URI to web URL
-            if post_uri:
-                try:
-                    _, _, _, _, post_rkey = post_uri.split("/")
-                    web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
-                    
-                    # Format notification title and message
-                    title = f"New post from {account.display_name or account.handle}"
-                    message = text[:200] + ("..." if len(text) > 200 else "")
-                    
-                    return title, message, web_url
-                except ValueError:
-                    logger.error(f"Invalid post URI format: {post_uri}")
-                    return None
-        except Exception as e:
-            logger.error(f"Error formatting notification: {str(e)}")
-            return None
-
-    async def _send_notifications(self, new_posts, account):
-        """Send notifications for new posts.
-        
-        Handles both desktop and email notifications based on account preferences.
-        
-        Args:
-            new_posts: List of new posts to notify about
-            account: MonitoredAccount instance
-        """
-        try:
-            with self.app.app_context():
-                # Refresh account to get notification preferences within session
-                account = MonitoredAccount.query.get(account.id)
-                if not account:
-                    logger.error(f"Account {account.handle} not found in database")
-                    return
-
-                for post in new_posts:
-                    notification = self._format_notification(post, account)
-                    if not notification:
-                        continue
-
-                    title, message, url = notification
-
-                    # Send notifications based on preferences
-                    notifications_sent = False
-                    for pref in account.notification_preferences:
-                        if not pref.enabled:
-                            continue
-
-                        try:
-                            if pref.type == "desktop":
-                                desktop_sent = await self._send_notification_async(
-                                    title=title,
-                                    message=message,
-                                    url=url
-                                )
-                                notifications_sent = notifications_sent or desktop_sent
-                            elif pref.type == "email":
-                                email_sent = self._send_email(
-                                    title=title,
-                                    message=message,
-                                    url=url
-                                )
-                                notifications_sent = notifications_sent or email_sent
-                        except Exception as e:
-                            logger.error(f"Error sending {pref.type} notification: {str(e)}")
-                            continue
-
-                    # Only mark as notified if at least one notification was sent successfully
-                    if notifications_sent:
-                        mark_post_notified(account.did, post.get("post", {}).get("uri"))
-
-        except Exception as e:
-            logger.error(f"Error sending notifications for {account.handle}: {str(e)}")
 
     def list_accounts(self):
         """List all monitored accounts.
@@ -487,11 +423,23 @@ class BlueSkyNotifier:
             with self.app.app_context():
                 result = add_monitored_account(profile, notification_preferences)
                 if "error" not in result:
-                    self.last_check[handle] = datetime.now(timezone.utc)
+                    # Set initial last_check time (store as naive UTC)
+                    account = MonitoredAccount.query.filter_by(handle=handle).first()
+                    if account:
+                        current_time = datetime.now(timezone.utc)
+                        logger.debug(f"Setting initial last_check for {handle}")
+                        logger.debug(f"Current time (UTC): {current_time}")
+                        naive_utc = current_time.replace(tzinfo=None)
+                        logger.debug(f"Naive UTC time: {naive_utc}")
+                        account.last_check = naive_utc
+                        db.session.commit()
+                        logger.debug(f"Saved last_check: {account.last_check}")
+                        logger.debug(f"Saved last_check tzinfo: {account.last_check.tzinfo}")
                 return result
 
         except Exception as e:
             logger.error(f"Error adding account {handle}: {str(e)}")
+            logger.exception(e)  # Log full traceback
             return {"error": str(e)}
 
     def remove_account(self, identifier, by_did=False):
@@ -513,12 +461,6 @@ class BlueSkyNotifier:
             with self.app.app_context():
                 result = remove_monitored_account(identifier, by_did)
                 logger.info(f"Database removal result: {result}")
-                
-                if "error" not in result:
-                    handle = result["account"]["handle"]
-                    logger.info(f"Removing {handle} from last_check cache")
-                    self.last_check.pop(handle, None)
-                    
                 return result
 
         except Exception as e:
@@ -556,6 +498,32 @@ class BlueSkyNotifier:
             error_msg = f"Error updating preferences: {str(e)}"
             logger.error(error_msg)
             return {"error": error_msg}
+
+    async def run(self) -> None:
+        """Run the notification service.
+        
+        Continuously checks for new posts from monitored accounts and sends notifications.
+        """
+        self._running = True
+        self.loop = asyncio.get_event_loop()
+        while self._running:
+            try:
+                with self.app.app_context():
+                    accounts = MonitoredAccount.query.filter_by(is_active=True).all()
+                    for account in accounts:
+                        new_posts = await self._check_new_posts(account)
+                        await self._send_notifications(new_posts, account)
+                        # Update last_check time (store as naive UTC)
+                        account.last_check = datetime.now(timezone.utc).replace(tzinfo=None)
+                        db.session.commit()
+            except Exception as e:
+                logger.error(f"Error in notification service: {str(e)}")
+
+            await asyncio.sleep(self.check_interval)
+
+    def stop(self) -> None:
+        """Stop the notification service."""
+        self._running = False
 
     async def _send_notification_async(self, title: str, message: str, url: str) -> bool:
         """Send a desktop notification using desktop-notifier asynchronously.
@@ -655,26 +623,91 @@ class BlueSkyNotifier:
             logger.error(f"Error sending email notification via Mailgun: {str(e)}")
             return False
 
-    async def run(self) -> None:
-        """Run the notification service.
+    def _format_notification(self, post, account):
+        """Format post information for notification.
         
-        Continuously checks for new posts from monitored accounts and sends notifications.
+        Args:
+            post: Post data from Bluesky API
+            account: MonitoredAccount instance
+            
+        Returns:
+            tuple: (title, message, url) for notification
         """
-        self._running = True
-        self.loop = asyncio.get_event_loop()
-        while self._running:
-            try:
-                with self.app.app_context():
-                    accounts = MonitoredAccount.query.filter_by(is_active=True).all()
-                    for account in accounts:
-                        new_posts = await self._check_new_posts(account)
-                        await self._send_notifications(new_posts, account)
-                        self.last_check[account.handle] = datetime.now(timezone.utc)
-            except Exception as e:
-                logger.error(f"Error in notification service: {str(e)}")
+        try:
+            # Get post details
+            text = post.get("post", {}).get("record", {}).get("text", "")
+            post_uri = post.get("post", {}).get("uri", "")
+            
+            # Convert URI to web URL
+            if post_uri:
+                try:
+                    _, _, _, _, post_rkey = post_uri.split("/")
+                    web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
+                    
+                    # Format notification title and message
+                    title = f"New post from {account.display_name or account.handle}"
+                    message = text[:200] + ("..." if len(text) > 200 else "")
+                    
+                    return title, message, web_url
+                except ValueError:
+                    logger.error(f"Invalid post URI format: {post_uri}")
+                    return None
+        except Exception as e:
+            logger.error(f"Error formatting notification: {str(e)}")
+            return None
 
-            await asyncio.sleep(self.check_interval)
+    async def _send_notifications(self, new_posts, account):
+        """Send notifications for new posts.
+        
+        Handles both desktop and email notifications based on account preferences.
+        
+        Args:
+            new_posts: List of new posts to notify about
+            account: MonitoredAccount instance
+        """
+        try:
+            with self.app.app_context():
+                # Refresh account to get notification preferences within session
+                account = MonitoredAccount.query.get(account.id)
+                if not account:
+                    logger.error(f"Account {account.handle} not found in database")
+                    return
 
-    def stop(self) -> None:
-        """Stop the notification service."""
-        self._running = False
+                for post in new_posts:
+                    notification = self._format_notification(post, account)
+                    if not notification:
+                        continue
+
+                    title, message, url = notification
+
+                    # Send notifications based on preferences
+                    notifications_sent = False
+                    for pref in account.notification_preferences:
+                        if not pref.enabled:
+                            continue
+
+                        try:
+                            if pref.type == "desktop":
+                                desktop_sent = await self._send_notification_async(
+                                    title=title,
+                                    message=message,
+                                    url=url
+                                )
+                                notifications_sent = notifications_sent or desktop_sent
+                            elif pref.type == "email":
+                                email_sent = self._send_email(
+                                    title=title,
+                                    message=message,
+                                    url=url
+                                )
+                                notifications_sent = notifications_sent or email_sent
+                        except Exception as e:
+                            logger.error(f"Error sending {pref.type} notification: {str(e)}")
+                            continue
+
+                    # Only mark as notified if at least one notification was sent successfully
+                    if notifications_sent:
+                        mark_post_notified(account.did, post.get("post", {}).get("uri"))
+
+        except Exception as e:
+            logger.error(f"Error sending notifications for {account.handle}: {str(e)}")
