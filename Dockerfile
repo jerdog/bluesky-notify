@@ -20,15 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Install Python dependencies
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy project files
-COPY . .
-
-# Install the package in development mode
-RUN pip install -e .
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/src/bluesky_notify/data /app/logs /app/instance \
@@ -36,11 +30,21 @@ RUN mkdir -p /app/src/bluesky_notify/data /app/logs /app/instance \
     && chmod -R 777 /app/logs \
     && chmod 777 /app/instance
 
-# Create a non-root user and set ownership
+# Create a non-root user
 RUN useradd -m -r appuser \
     && chown -R appuser:appuser /app
 
+# Copy project files
+COPY --chown=appuser:appuser . .
+
+# Install the package
+RUN pip install --no-cache-dir .
+
+# Switch to non-root user
 USER appuser
+
+# Expose the application port
+EXPOSE 5001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
