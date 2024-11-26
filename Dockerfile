@@ -1,8 +1,9 @@
-FROM python:3.11.10-alpine
+FROM python:3.11.7-slim-bullseye
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONPATH=/app/src \
@@ -11,16 +12,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies and build dependencies
-RUN apk add --no-cache \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    musl-dev \
     libffi-dev \
-    sqlite \
-    sqlite-dev \
-    && apk add --no-cache --virtual .build-deps \
-    python3-dev \
-    build-base
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -30,8 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Install the package in development mode
-RUN pip install -e . \
-    && apk del .build-deps
+RUN pip install -e .
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/src/bluesky_notify/data /app/logs /app/instance \
@@ -40,7 +37,7 @@ RUN mkdir -p /app/src/bluesky_notify/data /app/logs /app/instance \
     && chmod 777 /app/instance
 
 # Create a non-root user and set ownership
-RUN adduser -D -h /app appuser \
+RUN useradd -m -r appuser \
     && chown -R appuser:appuser /app
 
 USER appuser
