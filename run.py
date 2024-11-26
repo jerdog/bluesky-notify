@@ -27,6 +27,11 @@ if __name__ == "__main__":
         
         # Start the application
         logger.info("Starting Bluesky Notification Tracker...")
-        app.run(host="0.0.0.0", port=port, debug=True)
+        is_container = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
+        app.run(
+            host="0.0.0.0",
+            port=port,
+            debug=not is_container  # Disable debug mode in container
+        )
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}")
