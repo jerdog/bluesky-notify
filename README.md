@@ -4,6 +4,7 @@ A cross-platform desktop notification system for Bluesky. Monitor and receive no
 
 [![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/jerdog/bluesky-notify)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Flask](https://img.shields.io/badge/Flask-3.1.0-blue)](https://pypi.org/project/Flask/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## Features
@@ -196,11 +197,7 @@ bluesky-notify settings --log-level info   # Set to INFO level (default)
 
 ## Version History
 
-- 0.4.0: 
-  - Add status command and stop command
-  - Improve web interface integration
-  - Add comprehensive logging system with rotation
-  - Improve server management and port configuration
+- 0.4.0: Add web interface to daemon + terminal mode
 - 0.3.0: Add daemon mode, web interface, and improved CLI help text
 - 0.2.7: Fixed CLI output formatting and help text organization
 - 0.2.6: Enhanced CLI interface with consistent version and config display
