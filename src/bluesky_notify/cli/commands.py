@@ -7,6 +7,7 @@ from bluesky_notify.core.notifier import BlueSkyNotifier
 from bluesky_notify.core.settings import Settings
 from bluesky_notify.core.database import db, add_monitored_account, list_monitored_accounts, toggle_account_status, update_notification_preferences, remove_monitored_account
 from bluesky_notify.core.config import Config, get_data_dir
+import asyncio
 
 console = Console()
 
@@ -40,7 +41,7 @@ def cli():
 def add(handle, desktop, email):
     """Add a new account to monitor"""
     with app.app_context():
-        notifier = BlueSkyNotifier()
+        notifier = BlueSkyNotifier(app=app)
         if not notifier.authenticate():
             console.print("[red]Failed to authenticate with Bluesky[/red]")
             return
@@ -68,7 +69,7 @@ def add(handle, desktop, email):
 def list():
     """List all monitored accounts"""
     with app.app_context():
-        notifier = BlueSkyNotifier()
+        notifier = BlueSkyNotifier(app=app)
         if not notifier.authenticate():
             console.print("[red]Failed to authenticate with Bluesky[/red]")
             return
@@ -128,37 +129,45 @@ def remove(handle):
 def settings(interval, log_level):
     """View or update application settings"""
     settings = Settings()
+    current_settings = settings.get_settings()
     
     if interval is not None:
-        settings.check_interval = interval
+        settings.update_settings({'check_interval': interval})
         console.print(f"[green]Updated check interval to {interval} seconds[/green]")
     
     if log_level is not None:
-        settings.log_level = log_level.upper()
+        settings.update_settings({'log_level': log_level.upper()})
         console.print(f"[green]Updated log level to {log_level.upper()}[/green]")
     
     if interval is None and log_level is None:
         # Display current settings
         console.print("\nCurrent Settings:")
-        console.print(f"Check Interval: {settings.check_interval} seconds")
-        console.print(f"Log Level: {settings.log_level}")
+        console.print(f"Check Interval: {current_settings.get('check_interval', 60)} seconds")
+        console.print(f"Log Level: {current_settings.get('log_level', 'INFO')}")
+        console.print(f"Port: {current_settings.get('port', 3000)}")
 
 @cli.command()
 def start():
     """Start the notification service"""
     with app.app_context():
-        notifier = BlueSkyNotifier()
+        notifier = BlueSkyNotifier(app=app)
         if not notifier.authenticate():
             console.print("[red]Failed to authenticate with Bluesky[/red]")
             return
         
         console.print("[green]Starting Bluesky notification service...[/green]")
         try:
-            notifier.start_monitoring()
+            # Create and run the event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(notifier.run())
         except KeyboardInterrupt:
             console.print("\n[yellow]Shutting down notification service...[/yellow]")
+            notifier.stop()
         except Exception as e:
             console.print(f"[red]Error in notification service: {e}[/red]")
+        finally:
+            loop.close()
 
 # Export the CLI function as main for the entry point
 def main():

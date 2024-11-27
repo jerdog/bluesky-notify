@@ -1,209 +1,118 @@
 # Bluesky Notify
 
-A cross-platform desktop notification system for Bluesky social media posts.
+A command-line tool for monitoring and receiving notifications from Bluesky social media accounts.
 
 ## Features
 
-- Real-time desktop notifications for new Bluesky posts
-- Cross-platform support (Windows, macOS, Linux)
-- Configurable notification settings
-- Web interface for managing tracked accounts
-- Docker support for containerized deployment
+- Monitor multiple Bluesky accounts for new posts
+- Desktop notifications support across platforms (macOS, Linux, Windows)
+- Email notifications support (requires Mailgun configuration)
+- XDG-compliant configuration storage
+- SQLite database for reliable post tracking
+- Cross-platform compatibility
 
 ## Installation
-
-### Option 1: Using pip (Recommended for Users)
 
 ```bash
 pip install bluesky-notify
 ```
 
-### Option 2: Local Installation (For Development)
-
-1. Clone the repository:
-```bash
-git clone https://github.com/username/bluesky-notify.git
-cd bluesky-notify
-```
-
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Unix/macOS
-# OR
-venv\Scripts\activate     # On Windows
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Run the application:
-```bash
-python run.py
-```
-
-### Option 3: Using Docker
-
-```bash
-docker pull ghcr.io/username/bluesky-notify:latest
-docker run -d --name bluesky-notify ghcr.io/username/bluesky-notify
-```
-
-Or build locally:
-```bash
-docker build -t bluesky-notify .
-docker run -d --name bluesky-notify bluesky-notify
-```
-
 ## Configuration
 
-Before using Bluesky Notify, you need to set up your Bluesky credentials.
+The application uses the XDG Base Directory Specification for storing its data:
 
-### Method 1: Environment Variables
+- Configuration: `~/.config/bluesky-notify/`
+- Data: `~/.local/share/bluesky-notify/`
+- Cache: `~/.cache/bluesky-notify/`
+
+### Email Notifications (Optional)
+
+To enable email notifications, set the following environment variables:
 
 ```bash
-export BLUESKY_HANDLE="your.handle.bsky.social"
-export BLUESKY_APP_PASSWORD="your-app-password"
-```
-
-### Method 2: Configuration File
-
-Create a config file at `~/.config/bluesky-notify/config.json`:
-
-```json
-{
-  "handle": "your.handle.bsky.social",
-  "app_password": "your-app-password"
-}
-```
-
-### Method 3: Local Development Configuration
-
-When running locally, copy the example environment file:
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your configuration:
-```env
-# Flask configuration
-FLASK_APP=src/bluesky_notify
-FLASK_ENV=development
-SECRET_KEY=your-secret-key
-
-# Database configuration
-DATABASE_URL=sqlite:///data/bluesky_notify.db
-
-# Notification settings
-CHECK_INTERVAL=60  # seconds
-
-# Bluesky credentials
-BLUESKY_HANDLE=your.handle.bsky.social
-BLUESKY_APP_PASSWORD=your-app-password
+export MAILGUN_API_KEY='your-api-key'
+export MAILGUN_DOMAIN='your-domain'
+export MAILGUN_FROM_EMAIL='notifications@yourdomain.com'
+export MAILGUN_TO_EMAIL='your-email@example.com'
 ```
 
 ## Usage
 
-### Command Line Interface
+### Adding an Account to Monitor
 
-If installed via pip:
 ```bash
-bluesky-notify start          # Start the notification service
-bluesky-notify track @user    # Track a user
-bluesky-notify list          # List tracked users
-bluesky-notify untrack @user # Stop tracking a user
+bluesky-notify add @username.bsky.social
 ```
 
-If running locally:
+Options:
+- `--desktop/--no-desktop`: Enable/disable desktop notifications (default: enabled)
+- `--email/--no-email`: Enable/disable email notifications (default: disabled)
+
+### Listing Monitored Accounts
+
 ```bash
-python -m bluesky_notify.cli.commands start
-python -m bluesky_notify.cli.commands track @user
-python -m bluesky_notify.cli.commands list
-python -m bluesky_notify.cli.commands untrack @user
+bluesky-notify list
 ```
 
-### Web Interface
+### Removing an Account
 
-1. Start the web server:
-   - If installed via pip:
-     ```bash
-     bluesky-notify serve
-     ```
-   - If running locally:
-     ```bash
-     python run.py
-     ```
+```bash
+bluesky-notify remove @username.bsky.social
+```
 
-2. Open http://localhost:5000 in your browser
-3. Use the web interface to manage tracked accounts and notification settings
+### Toggling Account Status
+
+```bash
+bluesky-notify toggle @username.bsky.social
+```
+
+### Updating Notification Preferences
+
+```bash
+bluesky-notify update @username.bsky.social --desktop --no-email
+```
+
+### Starting the Notification Service
+
+```bash
+bluesky-notify start
+```
+
+The service will run continuously and check for new posts at regular intervals. Press Ctrl+C to stop the service.
+
+### Viewing/Updating Settings
+
+```bash
+bluesky-notify settings
+```
 
 ## Development
 
-### Running Tests
+1. Clone the repository:
 ```bash
-pytest
+git clone https://github.com/jerdog/bluesky-notify.git
+cd bluesky-notify
 ```
 
-### Code Formatting
+2. Create a virtual environment:
 ```bash
-black src/
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-### Type Checking
+3. Install development dependencies:
 ```bash
-mypy src/
+pip install -e ".[dev]"
 ```
-
-## Requirements
-
-- Python 3.8 or higher
-- Active Bluesky account
-- App password from Bluesky settings
-
-## Troubleshooting
-
-1. **No notifications appearing:**
-   - Check if your Bluesky credentials are correct
-   - Verify that desktop notifications are enabled in your system
-   - Check the logs:
-     - Pip install: `~/.config/bluesky-notify/logs/app.log`
-     - Local install: `./logs/app.log`
-
-2. **Connection errors:**
-   - Verify your internet connection
-   - Ensure your Bluesky credentials are valid
-   - Check if Bluesky's API is operational
-
-3. **Database errors:**
-   - Ensure the data directory exists
-   - Check file permissions
-   - For Docker: verify volume mount paths
-
-## Support
-
-If you encounter any issues or have questions:
-1. Check the [GitHub Issues](https://github.com/username/bluesky-notify/issues)
-2. Review the troubleshooting guide above
-3. Open a new issue if your problem persists
-
-## TODO
-
-- Add GitHub Actions testing
-- Streamline code where necessary/possible
-- Verify notifications across platforms
-
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-Please include tests and documentation updates with your changes.
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Support
+
+If you encounter any issues or have questions, please file an issue on the GitHub repository.

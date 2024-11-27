@@ -1,8 +1,13 @@
+"""Setup configuration for bluesky-notify package."""
+
 from setuptools import setup, find_namespace_packages
 
 setup(
     name="bluesky-notify",
-    version="0.1.0",
+    version="0.2.0",
+    description="Bluesky Notification Manager - Track and receive notifications from Bluesky accounts",
+    author="Jeremy Meiss",
+    author_email="jeremy.meiss@gmail.com",
     packages=find_namespace_packages(where="src", include=["bluesky_notify*"]),
     package_dir={"": "src"},
     include_package_data=True,
@@ -14,12 +19,18 @@ setup(
         ],
     },
     install_requires=[
-        "flask>=2.0.0",
-        "flask-cors>=4.0.0",
+        "flask>=3.1.0",
+        "flask-cors>=5.0.0",
         "flask-migrate>=4.0.0",
         "flask-sqlalchemy>=3.0.0",
         "atproto>=0.0.28",
         "desktop-notifier>=3.4.0",
+        "rich>=13.0.0",
+        "aiohttp>=3.8.0",
+        "python-dotenv>=1.0.1",
+        "requests>=2.31.0",
+        "urllib3>=2.0.7",
+        "certifi>=2023.7.22",
     ],
     extras_require={
         "dev": [
@@ -29,18 +40,15 @@ setup(
             "flake8>=5.0.0",
         ],
     },
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     entry_points={
         "console_scripts": [
             "bluesky-notify=bluesky_notify.cli.commands:main",
         ],
     },
-    author="Your Name",
-    author_email="your.email@example.com",
-    description="A cross-platform desktop notification system for Bluesky",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/bluesky-notify",
+    url="https://github.com/jerdog/bluesky-notify",
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: End Users/Desktop",

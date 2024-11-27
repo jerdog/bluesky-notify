@@ -12,13 +12,15 @@ def get_data_dir() -> str:
     # First check if XDG_DATA_HOME is set
     xdg_data_home = os.environ.get('XDG_DATA_HOME')
     if xdg_data_home:
-        data_dir = Path(xdg_data_home) / 'bluesky-notify'
+        base_dir = Path(xdg_data_home)
     else:
-        # Default to ~/.local/share/bluesky-notify
-        data_dir = Path.home() / '.local' / 'share' / 'bluesky-notify'
+        # Default to ~/.local/share
+        base_dir = Path.home() / '.local' / 'share'
     
+    data_dir = base_dir / 'bluesky-notify'
     # Ensure the directory exists
     data_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Using data directory: {data_dir}")
     return str(data_dir)
 
 class Config:
@@ -27,7 +29,6 @@ class Config:
     def __init__(self):
         """Initialize Config manager with default values."""
         data_dir = get_data_dir()
-        logger.info(f"Using data directory: {data_dir}")
         self._config = {
             'NOTIFICATION_METHOD': 'desktop',
             'CHECK_INTERVAL': '60',

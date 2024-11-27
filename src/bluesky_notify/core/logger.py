@@ -5,7 +5,21 @@ Logging configuration for the BlueSky Notification System.
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Optional
+
+def get_log_dir() -> str:
+    """Get the log directory path."""
+    # Use XDG_DATA_HOME if set, otherwise ~/.local/share
+    xdg_data_home = os.environ.get('XDG_DATA_HOME')
+    if xdg_data_home:
+        base_dir = Path(xdg_data_home)
+    else:
+        base_dir = Path.home() / '.local' / 'share'
+    
+    log_dir = base_dir / 'bluesky-notify' / 'logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return str(log_dir)
 
 def get_logger(name: str, log_level: Optional[str] = None) -> logging.Logger:
     """
@@ -18,10 +32,6 @@ def get_logger(name: str, log_level: Optional[str] = None) -> logging.Logger:
     Returns:
         A configured logger instance
     """
-    # Create logs directory if it doesn't exist
-    log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-
     # Configure logging format
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -38,7 +48,7 @@ def get_logger(name: str, log_level: Optional[str] = None) -> logging.Logger:
     if not logger.handlers:
         # File handler
         file_handler = RotatingFileHandler(
-            os.path.join(log_dir, f'{name}.log'),
+            os.path.join(get_log_dir(), f'{name}.log'),
             maxBytes=1024 * 1024,  # 1MB
             backupCount=5
         )
