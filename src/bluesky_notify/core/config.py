@@ -35,6 +35,10 @@ class Config:
             'DATABASE_URL': f'sqlite:///{self.data_dir}/bluesky_notify.db'
         }
     
+    def get_data_dir(self) -> str:
+        """Get the data directory path."""
+        return self.data_dir
+    
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value.
         

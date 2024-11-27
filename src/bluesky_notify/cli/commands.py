@@ -14,6 +14,11 @@ import platform
 import shutil
 import subprocess
 from pathlib import Path
+import threading
+from bluesky_notify.utils.network import check_service_status, is_port_in_use
+import signal
+import time
+from bluesky_notify.core.logger import get_logger
 
 console = Console()
 
@@ -28,8 +33,8 @@ app = Flask(__name__)
 
 # Load config and get data directory
 config = Config()
-app.config.from_object(config)
-db_path = os.path.join(config.data_dir, 'bluesky_notify.db')
+data_dir = get_data_dir()
+db_path = os.path.join(data_dir, 'bluesky_notify.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
@@ -177,28 +182,210 @@ def remove(handle):
             console.print(f"[red]Failed to remove {handle}[/red]")
 
 @cli.command()
-@click.option('--interval', type=int, help='Check interval in seconds')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], case_sensitive=False))
-def settings(interval, log_level):
+def status():
+    """Show the current status of the notification service."""
+    settings = Settings()
+    config = Config()
+    
+    # Get service status
+    service_status = check_service_status()
+    port = settings.get_settings().get('port', 3000)
+    web_running = is_port_in_use(port)
+    
+    # Print status with rich formatting
+    console.print("\n[bold]Bluesky Notify Status[/bold]")
+    console.print("─" * 50)
+    
+    # Service Status
+    if service_status['running']:
+        mode = service_status['mode'].title()
+        console.print(f"[green]● Service Running[/green] (Mode: {mode})")
+        if service_status['pid']:
+            console.print(f"   Process ID: {service_status['pid']}")
+    else:
+        console.print("[red]○ Service Not Running[/red]")
+    
+    # Web Interface
+    if web_running:
+        console.print(f"[green]● Web Interface Running[/green]")
+        console.print(f"   URL: [link=http://127.0.0.1:{port}]http://127.0.0.1:{port}[/link]")
+    else:
+        console.print("[red]○ Web Interface Not Running[/red]")
+    
+    # Data Directory
+    data_dir = config.get_data_dir()
+    console.print("\n[bold]Data Directory:[/bold]")
+    console.print(f"[blue]{data_dir}[/blue]")
+    
+    # Configuration
+    console.print("\n[bold]Configuration:[/bold]")
+    current = settings.get_settings()
+    console.print(f"Check Interval: {current.get('check_interval', 60)} seconds")
+    console.print(f"Log Level: {current.get('log_level', 'INFO')}")
+    console.print(f"Web Port: {current.get('port', 3000)}")
+
+@cli.command()
+@click.option('--interval', type=int, help='Check interval in seconds (default: 60)')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False),
+              help='Logging level (default: INFO)')
+@click.option('--port', type=int, help='Web interface port (default: 3000)')
+def settings(interval, log_level, port):
     """View or update application settings.
     
-    --interval: How often to check for new posts (in seconds)
-    --log-level: Set logging verbosity (DEBUG, INFO, WARNING, ERROR, CRITICAL)"""
+    Available options:
+      --interval    Check interval in seconds (default: 60)
+      --log-level   Logging level: DEBUG, INFO, WARNING, or ERROR (default: INFO)
+      --port        Web interface port (default: 3000)
+    
+    Example:
+      bluesky-notify settings --interval 30 --log-level DEBUG --port 3001
+    """
     settings = Settings()
+    logger = get_logger('bluesky_notify')
+    
+    # Get current settings before update
+    old_settings = settings.get_settings()
+    old_port = old_settings.get('port', 3000)
+    
+    # Update settings if provided
+    updates = {}
     if interval is not None:
-        settings.update_settings({'check_interval': interval})
-        console.print(f"[green]Updated check interval to {interval} seconds[/green]")
-    
+        updates['check_interval'] = interval
     if log_level is not None:
-        settings.update_settings({'log_level': log_level.upper()})
-        console.print(f"[green]Updated log level to {log_level.upper()}[/green]")
+        updates['log_level'] = log_level.upper()
+    if port is not None:
+        updates['port'] = port
+        
+    if updates:
+        if settings.update_settings(updates):
+            console.print("[green]Settings updated successfully![/green]")
+            
+            # If port was changed, check if we need to restart the web server
+            if 'port' in updates and updates['port'] != old_port:
+                logger.info(f"Port changed from {old_port} to {updates['port']}, restarting web server...")
+                
+                # Check if old port is in use (indicating our server is running)
+                if is_port_in_use(old_port):
+                    # Stop the current server
+                    from bluesky_notify.api.server import shutdown_server
+                    shutdown_server()
+                    time.sleep(1)  # Give it a moment to shut down
+                    
+                    # Verify old port is free
+                    if is_port_in_use(old_port):
+                        logger.warning(f"Port {old_port} is still in use after shutdown attempt")
+                    
+                    # Start the server with new port
+                    from bluesky_notify.api.server import run_server
+                    def run_web_server():
+                        try:
+                            run_server(host='127.0.0.1', port=updates['port'])
+                        except Exception as e:
+                            logger.error(f"Error starting web server on port {updates['port']}: {e}")
+                            # Signal the main thread
+                            os.kill(os.getpid(), signal.SIGINT)
+                    
+                    web_thread = threading.Thread(target=run_web_server, daemon=True)
+                    web_thread.start()
+                    
+                    # Give the server a moment to start
+                    time.sleep(1)
+                    
+                    # Verify new port is in use
+                    if is_port_in_use(updates['port']):
+                        logger.info(f"Web server restarted successfully on port {updates['port']}")
+                    else:
+                        logger.error(f"Failed to start web server on port {updates['port']}")
+                
+                else:
+                    logger.info(f"No web server running on port {old_port}")
+        else:
+            console.print("[red]Failed to update settings[/red]")
+            
+    # Display current settings
+    current = settings.get_settings()
+    console.print("\n[bold]Current Settings:[/bold]")
+    console.print(f"Check Interval: {current.get('check_interval', 60)} seconds")
+    console.print(f"Log Level: {current.get('log_level', 'INFO')}")
+    console.print(f"Web Interface Port: {current.get('port', 3000)}")
     
-    if interval is None and log_level is None:
-        # Display current settings
-        console.print("\nCurrent Settings:")
-        console.print(f"Check Interval: {settings.get_settings().get('check_interval', 60)} seconds")
-        console.print(f"Log Level: {settings.get_settings().get('log_level', 'INFO')}")
-        console.print(f"Port: {settings.get_settings().get('port', 3000)}")
+    # Show available options
+    console.print("\n[bold]Available Options:[/bold]")
+    console.print("--interval NUMBER    Set check interval (in seconds, minimum: 30)")
+    console.print("--log-level LEVEL    Set log level (DEBUG, INFO, WARNING, or ERROR)")
+    console.print("--port NUMBER        Set web interface port (1024-65535)")
+
+@cli.command()
+def stop():
+    """Stop the notification service."""
+    system = platform.system()
+    service_status = check_service_status()
+    
+    if not service_status['running']:
+        console.print("[yellow]Service is not running[/yellow]")
+        return
+    
+    try:
+        if service_status['mode'] == 'daemon':
+            if system == 'Darwin':  # macOS
+                plist_path = os.path.expanduser('~/Library/LaunchAgents/com.bluesky-notify.plist')
+                subprocess.run(
+                    ['launchctl', 'unload', plist_path],
+                    capture_output=True
+                )
+                # Also kill any remaining processes
+                for pid in service_status['pids']:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except:
+                        pass
+                console.print("[green]Daemon service stopped successfully[/green]")
+            elif system == 'Linux':
+                subprocess.run(
+                    ['systemctl', '--user', 'stop', 'bluesky-notify'],
+                    check=True
+                )
+                # Also kill any remaining processes
+                for pid in service_status['pids']:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except:
+                        pass
+                console.print("[green]Daemon service stopped successfully[/green]")
+            else:
+                console.print("[red]Daemon mode not supported on this platform[/red]")
+        else:  # Terminal mode
+            killed = False
+            for pid in service_status['pids']:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed = True
+                except:
+                    pass
+            if killed:
+                console.print("[green]Terminal service stopped successfully[/green]")
+            else:
+                console.print("[red]Could not find process to stop[/red]")
+                
+        # Try to stop web interface by sending request
+        try:
+            import requests
+            settings = Settings()
+            port = settings.get_settings().get('port', 3000)
+            requests.get(f'http://127.0.0.1:{port}/shutdown', timeout=1)
+        except:
+            pass  # Web interface might already be down
+            
+        # Verify service is stopped
+        time.sleep(1)  # Give processes time to stop
+        new_status = check_service_status()
+        if new_status['running']:
+            console.print("[yellow]Warning: Service may still be running[/yellow]")
+            
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error stopping service: {e}[/red]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
 
 @cli.command()
 @click.option('-d', '--daemon', is_flag=True, help='Install and run as a system service')
@@ -206,7 +393,11 @@ def start(daemon):
     """Start the notification service.
     
     Run with --daemon to install and run as a system service (supported on macOS and Linux).
-    Without --daemon, runs in the terminal and can be stopped with Ctrl+C."""
+    The web interface is always available at the configured port (default: 3000)."""
+    
+    settings = Settings()
+    port = settings.get_settings().get('port', 3000)
+    
     if daemon:
         system = platform.system()
         if system == 'Darwin':  # macOS
@@ -228,6 +419,8 @@ def start(daemon):
                 subprocess.run(['launchctl', 'load', plist_dest], check=True)
                 console.print("[green]Service installed and started successfully![/green]")
                 console.print(f"Logs will be available at:\n- ~/Library/Logs/bluesky-notify.log\n- ~/Library/Logs/bluesky-notify.error.log")
+                console.print(f"\nWeb interface will be available at: [link=http://127.0.0.1:{port}]http://127.0.0.1:{port}[/link]")
+                console.print("\nNote: It may take a few seconds for the web interface to start.")
                 return
             except subprocess.CalledProcessError as e:
                 console.print(f"[red]Error starting service: {e}[/red]")
@@ -259,6 +452,8 @@ def start(daemon):
                 subprocess.run(['systemctl', '--user', 'enable', 'bluesky-notify'], check=True)
                 subprocess.run(['systemctl', '--user', 'start', 'bluesky-notify'], check=True)
                 console.print("[green]Service installed and started successfully![/green]")
+                console.print(f"Web interface will be available at: [link=http://127.0.0.1:{port}]http://127.0.0.1:{port}[/link]")
+                console.print("\nNote: It may take a few seconds for the web interface to start.")
                 console.print("To view logs, run: journalctl --user -u bluesky-notify")
                 return
             except subprocess.CalledProcessError as e:
@@ -270,24 +465,60 @@ def start(daemon):
     
     # If not running as daemon, proceed with normal start
     with app.app_context():
+        # Initialize our logger
+        logger = get_logger('bluesky_notify')
+        
+        logger.info(f"Bluesky Notify v{__version__}")
+        logger.info(f"Config: {config.data_dir}")
+        
         notifier = BlueSkyNotifier(app=app)
         if not notifier.authenticate():
-            console.print("[red]Failed to authenticate with Bluesky[/red]")
+            logger.error("Failed to authenticate with Bluesky")
             return
         
-        console.print("[green]Starting Bluesky notification service...[/green]")
+        # Start web interface in a separate thread
+        from bluesky_notify.api.server import run_server
+        
+        def run_web_server():
+            try:
+                # Get current port from settings
+                current_settings = settings.get_settings()
+                server_port = current_settings.get('port', 3000)
+                run_server(host='127.0.0.1', port=server_port)
+            except Exception as e:
+                logger.error(f"Error in web server: {e}")
+                # Signal the main thread to shut down
+                os.kill(os.getpid(), signal.SIGINT)
+        
+        web_thread = threading.Thread(target=run_web_server, daemon=True)
+        web_thread.start()
+        
+        # Give the web server a moment to start
+        time.sleep(1)
+        
+        # Get current port for the message
+        current_settings = settings.get_settings()
+        server_port = current_settings.get('port', 3000)
+        logger.info(f"Web interface available at http://127.0.0.1:{server_port}")
+        logger.info("Starting notification service. Press Ctrl+C to stop.")
+        
         try:
             # Create and run the event loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(notifier.run())
         except KeyboardInterrupt:
-            console.print("\n[yellow]Shutting down notification service...[/yellow]")
+            logger.warning("Stopping notification service and web interface...")
             notifier.stop()
+            # Shutdown the web server
+            from bluesky_notify.api.server import shutdown_server
+            shutdown_server()
             loop.close()
             sys.exit(0)
         except Exception as e:
-            console.print(f"[red]Error in notification service: {e}[/red]")
+            logger.error(f"Error in notification service: {e}")
+            from bluesky_notify.api.server import shutdown_server
+            shutdown_server()
             loop.close()
             sys.exit(1)
         finally:

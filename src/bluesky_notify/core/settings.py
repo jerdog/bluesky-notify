@@ -17,7 +17,9 @@ class Settings:
     
     def __init__(self):
         """Initialize Settings manager."""
-        self.settings_file = Path('data/settings.json')
+        from .config import get_data_dir
+        data_dir = Path(get_data_dir())
+        self.settings_file = data_dir / 'settings.json'
         self._ensure_settings_file()
     
     def _ensure_settings_file(self) -> None:

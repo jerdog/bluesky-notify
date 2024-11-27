@@ -34,7 +34,8 @@ def get_logger(name: str, log_level: Optional[str] = None) -> logging.Logger:
     """
     # Configure logging format
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
 
     # Get logger
@@ -46,18 +47,39 @@ def get_logger(name: str, log_level: Optional[str] = None) -> logging.Logger:
 
     # Avoid duplicate handlers
     if not logger.handlers:
-        # File handler
+        # General log file handler (INFO and above, but not ERROR)
+        class InfoFilter(logging.Filter):
+            def filter(self, record):
+                return record.levelno < logging.ERROR
+
         file_handler = RotatingFileHandler(
             os.path.join(get_log_dir(), f'{name}.log'),
             maxBytes=1024 * 1024,  # 1MB
             backupCount=5
         )
         file_handler.setFormatter(formatter)
+        file_handler.setLevel(logging.INFO)
+        file_handler.addFilter(InfoFilter())
         logger.addHandler(file_handler)
+
+        # Error log file handler (ERROR and above only)
+        error_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        error_handler = RotatingFileHandler(
+            os.path.join(get_log_dir(), f'{name}.error.log'),
+            maxBytes=1024 * 1024,  # 1MB
+            backupCount=5
+        )
+        error_handler.setFormatter(error_formatter)
+        error_handler.setLevel(logging.ERROR)
+        logger.addHandler(error_handler)
 
         # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
+        console_handler.setLevel(logging.INFO)
         logger.addHandler(console_handler)
 
     return logger
