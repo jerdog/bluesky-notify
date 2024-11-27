@@ -143,26 +143,26 @@ async function loadAccounts() {
 async function handleAddAccount(event) {
     event.preventDefault();
     const form = event.target;
-    const handle = form.querySelector('#handle').value.trim();
+    let handleValue = form.querySelector('#handle').value.trim();
     const desktopNotif = form.querySelector('#desktopNotif').checked;
     const emailNotif = form.querySelector('#emailNotif').checked;
 
     // Remove @ if present and clean invisible characters
-    if (handle.startsWith('@')) {
-        handle = handle.substring(1);
+    if (handleValue.startsWith('@')) {
+        handleValue = handleValue.substring(1);
     }
     // Clean invisible characters and normalize
-    handle = handle.replace(/[\u200B-\u200D\u202A-\u202E\uFEFF]/g, '').normalize();
+    handleValue = handleValue.replace(/[\u200B-\u200D\u202A-\u202E\uFEFF]/g, '').normalize();
 
     // Basic handle validation
-    if (!handle) {
+    if (!handleValue) {
         showNotification('Please enter a Bluesky handle', 'error');
         return;
     }
 
-    // Validate handle format
+    // Validate handle format (simplified regex)
     const handleRegex = /^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])*$/;
-    if (!handleRegex.test(handle)) {
+    if (!handleRegex.test(handleValue)) {
         showNotification('Please enter a valid Bluesky handle (e.g., user.bsky.social)', 'error');
         return;
     }
@@ -174,11 +174,9 @@ async function handleAddAccount(event) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                handle,
-                notification_preferences: {
-                    desktop: desktopNotif,
-                    email: emailNotif
-                }
+                handle: handleValue,
+                desktop: desktopNotif,
+                email: emailNotif
             })
         });
 
@@ -188,7 +186,7 @@ async function handleAddAccount(event) {
             throw new Error(data.error || 'Failed to add account');
         }
 
-        document.getElementById('handle').value = '';
+        form.querySelector('#handle').value = '';
         await loadAccounts();
         showNotification('Account added successfully');
     } catch (error) {
@@ -246,4 +244,69 @@ async function removeAccount(handle) {
 // Start periodic refresh
 function startPeriodicRefresh() {
     setInterval(loadAccounts, REFRESH_INTERVAL);
+}
+
+// WebSocket connection for real-time notifications
+let ws;
+let wsRetryCount = 0;
+const MAX_RETRIES = 5;
+
+// Check if we're running in Docker by looking at the hostname
+// Docker containers will have a hostname that's different from localhost/127.0.0.1
+const isDocker = !['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+// Only initialize WebSocket and request notification permission in Docker
+if (isDocker) {
+    // Request notification permission on page load
+    if ("Notification" in window) {
+        if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+            Notification.requestPermission().then(function (permission) {
+                if (permission === "granted") {
+                    console.log("Notification permission granted");
+                }
+            });
+        }
+    }
+
+    // Initialize WebSocket connection
+    function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = function() {
+            console.log('WebSocket connected');
+            wsRetryCount = 0;
+        };
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'notification' && Notification.permission === "granted") {
+                const notification = new Notification(data.title, {
+                    body: data.message
+                });
+                
+                notification.onclick = function() {
+                    window.open(data.url, '_blank');
+                    notification.close();
+                };
+            }
+        };
+        
+        ws.onclose = function() {
+            console.log('WebSocket disconnected');
+            if (wsRetryCount < MAX_RETRIES) {
+                wsRetryCount++;
+                setTimeout(connectWebSocket, 1000 * Math.pow(2, wsRetryCount));
+            }
+        };
+        
+        ws.onerror = function(error) {
+            console.error('WebSocket error:', error);
+        };
+    }
+
+    // Start WebSocket connection
+    connectWebSocket();
 }

@@ -18,7 +18,7 @@ import threading
 from bluesky_notify.utils.network import check_service_status, is_port_in_use
 import signal
 import time
-from bluesky_notify.core.logger import get_logger
+from bluesky_notify.core.logger import get_logger, get_log_dir
 
 console = Console()
 
@@ -316,80 +316,10 @@ def settings(interval, log_level, port):
     console.print("--port NUMBER        Set web interface port (1024-65535)")
 
 @cli.command()
-def stop():
-    """Stop the notification service."""
-    system = platform.system()
-    service_status = check_service_status()
-    
-    if not service_status['running']:
-        console.print("[yellow]Service is not running[/yellow]")
-        return
-    
-    try:
-        if service_status['mode'] == 'daemon':
-            if system == 'Darwin':  # macOS
-                plist_path = os.path.expanduser('~/Library/LaunchAgents/com.bluesky-notify.plist')
-                subprocess.run(
-                    ['launchctl', 'unload', plist_path],
-                    capture_output=True
-                )
-                # Also kill any remaining processes
-                for pid in service_status['pids']:
-                    try:
-                        os.kill(pid, signal.SIGTERM)
-                    except:
-                        pass
-                console.print("[green]Daemon service stopped successfully[/green]")
-            elif system == 'Linux':
-                subprocess.run(
-                    ['systemctl', '--user', 'stop', 'bluesky-notify'],
-                    check=True
-                )
-                # Also kill any remaining processes
-                for pid in service_status['pids']:
-                    try:
-                        os.kill(pid, signal.SIGTERM)
-                    except:
-                        pass
-                console.print("[green]Daemon service stopped successfully[/green]")
-            else:
-                console.print("[red]Daemon mode not supported on this platform[/red]")
-        else:  # Terminal mode
-            killed = False
-            for pid in service_status['pids']:
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                    killed = True
-                except:
-                    pass
-            if killed:
-                console.print("[green]Terminal service stopped successfully[/green]")
-            else:
-                console.print("[red]Could not find process to stop[/red]")
-                
-        # Try to stop web interface by sending request
-        try:
-            import requests
-            settings = Settings()
-            port = settings.get_settings().get('port', 3000)
-            requests.get(f'http://127.0.0.1:{port}/shutdown', timeout=1)
-        except:
-            pass  # Web interface might already be down
-            
-        # Verify service is stopped
-        time.sleep(1)  # Give processes time to stop
-        new_status = check_service_status()
-        if new_status['running']:
-            console.print("[yellow]Warning: Service may still be running[/yellow]")
-            
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error stopping service: {e}[/red]")
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-
-@cli.command()
 @click.option('-d', '--daemon', is_flag=True, help='Install and run as a system service')
-def start(daemon):
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False),
+              default='INFO', help='Set the logging level')
+def start(daemon, log_level):
     """Start the notification service.
     
     Run with --daemon to install and run as a system service (supported on macOS and Linux).
@@ -465,11 +395,27 @@ def start(daemon):
     
     # If not running as daemon, proceed with normal start
     with app.app_context():
-        # Initialize our logger
-        logger = get_logger('bluesky_notify')
+        # Initialize our logger with specified level
+        logger = get_logger('bluesky_notify', log_level=log_level)
         
-        logger.info(f"Bluesky Notify v{__version__}")
-        logger.info(f"Config: {config.data_dir}")
+        logger.info(f"Starting Bluesky Notify v{__version__}")
+        logger.info(f"Config directory: {config.data_dir}")
+        log_dir = get_log_dir()
+        logger.info(f"Log directory: {log_dir}")
+        logger.debug(f"Log level: {log_level}")
+        
+        # Verify log directory exists and is writable
+        try:
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+            test_file = os.path.join(log_dir, 'test.txt')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            logger.info("Log directory is writable")
+        except Exception as e:
+            logger.error(f"Error accessing log directory: {e}")
+            return
         
         notifier = BlueSkyNotifier(app=app)
         if not notifier.authenticate():
@@ -478,51 +424,184 @@ def start(daemon):
         
         # Start web interface in a separate thread
         from bluesky_notify.api.server import run_server
+        import webbrowser
         
         def run_web_server():
             try:
-                # Get current port from settings
+                # Get current port from settings, ensure we use 3000 as default for local development
                 current_settings = settings.get_settings()
                 server_port = current_settings.get('port', 3000)
-                run_server(host='127.0.0.1', port=server_port)
+                
+                # If port is 5000 on macOS, switch to 3000
+                if server_port == 5000 and platform.system() == 'Darwin':
+                    logger.warning("Port 5000 is reserved on macOS, switching to port 3000")
+                    server_port = 3000
+                    # Update settings
+                    settings.update_settings({'port': server_port})
+                
+                logger.debug(f"Attempting to start web server on port {server_port}")
+                
+                # More thorough port check
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                result = sock.connect_ex(('127.0.0.1', server_port))
+                if result == 0:
+                    logger.error(f"Port {server_port} is already in use")
+                    sock.close()
+                    os.kill(os.getpid(), signal.SIGINT)
+                    return
+                sock.close()
+                logger.debug(f"Port {server_port} is available")
+                
+                # Open web browser after a short delay
+                def open_browser():
+                    time.sleep(1.5)  # Wait for server to start
+                    url = f'http://127.0.0.1:{server_port}'
+                    logger.info(f"Opening web interface at {url}")
+                    webbrowser.open(url)
+                
+                browser_thread = threading.Thread(target=open_browser, name="BrowserOpener")
+                browser_thread.daemon = True
+                browser_thread.start()
+                
+                logger.info(f"Starting web interface on port {server_port}")
+                # Start Flask with debug output
+                run_server(host='127.0.0.1', port=server_port, debug=True)
             except Exception as e:
                 logger.error(f"Error in web server: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                # Signal the main thread to shut down
+                os.kill(os.getpid(), signal.SIGINT)
+
+        def run_notifier_service():
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                with app.app_context():
+                    notifier = BlueSkyNotifier(app=app)
+                    logger.info("Starting notification service")
+                    loop.run_until_complete(notifier.run())
+            except Exception as e:
+                logger.error(f"Error in notification service: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 # Signal the main thread to shut down
                 os.kill(os.getpid(), signal.SIGINT)
         
-        web_thread = threading.Thread(target=run_web_server, daemon=True)
+        # Start both services in separate threads
+        web_thread = threading.Thread(target=run_web_server, name="WebServer")
+        notifier_thread = threading.Thread(target=run_notifier_service, name="NotifierService")
+        
+        # Make threads daemon so they exit when main thread exits
+        web_thread.daemon = True
+        notifier_thread.daemon = True
+        
+        # Start threads
         web_thread.start()
+        notifier_thread.start()
         
-        # Give the web server a moment to start
-        time.sleep(1)
-        
-        # Get current port for the message
-        current_settings = settings.get_settings()
-        server_port = current_settings.get('port', 3000)
-        logger.info(f"Web interface available at http://127.0.0.1:{server_port}")
-        logger.info("Starting notification service. Press Ctrl+C to stop.")
+        logger.info("Services started. Press Ctrl+C to stop.")
         
         try:
-            # Create and run the event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(notifier.run())
+            # Keep main thread alive and handle Ctrl+C
+            while True:
+                time.sleep(1)
+                
+                # Check if threads are still alive
+                if not web_thread.is_alive():
+                    logger.error("Web server thread died unexpectedly")
+                    break
+                if not notifier_thread.is_alive():
+                    logger.error("Notifier thread died unexpectedly")
+                    break
+                
         except KeyboardInterrupt:
-            logger.warning("Stopping notification service and web interface...")
+            logger.warning("Stopping services...")
             notifier.stop()
             # Shutdown the web server
             from bluesky_notify.api.server import shutdown_server
             shutdown_server()
-            loop.close()
             sys.exit(0)
         except Exception as e:
-            logger.error(f"Error in notification service: {e}")
+            logger.error(f"Error in main thread: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             from bluesky_notify.api.server import shutdown_server
             shutdown_server()
-            loop.close()
             sys.exit(1)
-        finally:
-            loop.close()
+
+@cli.command()
+def stop():
+    """Stop the notification service."""
+    system = platform.system()
+    service_status = check_service_status()
+    
+    if not service_status['running']:
+        console.print("[yellow]Service is not running[/yellow]")
+        return
+    
+    try:
+        if service_status['mode'] == 'daemon':
+            if system == 'Darwin':  # macOS
+                plist_path = os.path.expanduser('~/Library/LaunchAgents/com.bluesky-notify.plist')
+                subprocess.run(
+                    ['launchctl', 'unload', plist_path],
+                    capture_output=True
+                )
+                # Also kill any remaining processes
+                for pid in service_status['pids']:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except:
+                        pass
+                console.print("[green]Daemon service stopped successfully[/green]")
+            elif system == 'Linux':
+                subprocess.run(
+                    ['systemctl', '--user', 'stop', 'bluesky-notify'],
+                    check=True
+                )
+                # Also kill any remaining processes
+                for pid in service_status['pids']:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except:
+                        pass
+                console.print("[green]Daemon service stopped successfully[/green]")
+            else:
+                console.print("[red]Daemon mode not supported on this platform[/red]")
+        else:  # Terminal mode
+            killed = False
+            for pid in service_status['pids']:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed = True
+                except:
+                    pass
+            if killed:
+                console.print("[green]Terminal service stopped successfully[/green]")
+            else:
+                console.print("[red]Could not find process to stop[/red]")
+                
+        # Try to stop web interface by sending request
+        try:
+            import requests
+            settings = Settings()
+            port = settings.get_settings().get('port', 3000)
+            requests.get(f'http://127.0.0.1:{port}/shutdown', timeout=1)
+        except:
+            pass  # Web interface might already be down
+            
+        # Verify service is stopped
+        time.sleep(1)  # Give processes time to stop
+        new_status = check_service_status()
+        if new_status['running']:
+            console.print("[yellow]Warning: Service may still be running[/yellow]")
+            
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error stopping service: {e}[/red]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
 
 # Export the CLI function as main for the entry point
 def main():

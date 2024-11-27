@@ -6,7 +6,7 @@
     <string>com.bluesky-notify</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/bluesky-notify</string>
+        <string>/usr/local/bin/bluesky-notify</string>
         <string>start</string>
     </array>
     <key>RunAtLoad</key>
@@ -14,19 +14,13 @@
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/jerdog/Library/Logs/bluesky-notify.log</string>
+    <string>~/Library/Logs/bluesky-notify.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/jerdog/Library/Logs/bluesky-notify.error.log</string>
+    <string>~/Library/Logs/bluesky-notify.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-        <key>PYTHONUNBUFFERED</key>
-        <string>1</string>
-        <key>HOME</key>
-        <string>/Users/jerdog</string>
+        <key>DOCKER_CONTAINER</key>
+        <string>false</string>
     </dict>
-    <key>WorkingDirectory</key>
-    <string>/Users/jerdog</string>
 </dict>
 </plist>

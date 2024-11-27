@@ -659,7 +659,7 @@ class BlueSkyNotifier:
     async def _send_notifications(self, new_posts, account):
         """Send notifications for new posts.
         
-        Handles both desktop and email notifications based on account preferences.
+        Handles desktop, browser, and email notifications based on account preferences.
         
         Args:
             new_posts: List of new posts to notify about
@@ -687,7 +687,8 @@ class BlueSkyNotifier:
                             continue
 
                         try:
-                            if pref.type == "desktop":
+                            if pref.type == "desktop" and not os.getenv('DOCKER_CONTAINER'):
+                                # Only send desktop notifications when not in Docker
                                 desktop_sent = await self._send_notification_async(
                                     title=title,
                                     message=message,
@@ -703,11 +704,22 @@ class BlueSkyNotifier:
                                 notifications_sent = notifications_sent or email_sent
                         except Exception as e:
                             logger.error(f"Error sending {pref.type} notification: {str(e)}")
-                            continue
 
-                    # Only mark as notified if at least one notification was sent successfully
+                    # Send browser notification if in Docker and desktop notifications are enabled
+                    if os.getenv('DOCKER_CONTAINER') and any(p.type == "desktop" and p.enabled for p in account.notification_preferences):
+                        try:
+                            # Import here to avoid circular import and allow CLI usage without flask_sock
+                            from bluesky_notify.api.server import broadcast_notification
+                            broadcast_notification(title, message, url)
+                            notifications_sent = True
+                            logger.info(f"Browser notification sent for {account.handle}")
+                        except Exception as e:
+                            logger.error(f"Error sending browser notification: {str(e)}")
+
+                    # If notification was sent, mark the post as notified
                     if notifications_sent:
-                        mark_post_notified(account.did, post.get("post", {}).get("uri"))
+                        post_id = post.get("post", {}).get("uri")
+                        mark_post_notified(account.did, post_id)
 
         except Exception as e:
-            logger.error(f"Error sending notifications for {account.handle}: {str(e)}")
+            logger.error(f"Error in _send_notifications: {str(e)}")

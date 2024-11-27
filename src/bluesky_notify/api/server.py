@@ -1,5 +1,10 @@
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
+import os
+import sys
+from queue import Queue
+from threading import Lock
+
 from bluesky_notify.core.notifier import BlueSkyNotifier
 from bluesky_notify.core.database import (
     db, add_monitored_account, list_monitored_accounts,
@@ -8,13 +13,28 @@ from bluesky_notify.core.database import (
 )
 from bluesky_notify.core.config import Config, get_data_dir
 from bluesky_notify.core.logger import get_logger
-import os
-import sys
+
+# Initialize WebSocket support only in Docker
+if os.getenv('DOCKER_CONTAINER'):
+    try:
+        from flask_sock import Sock
+        has_websocket = True
+    except ImportError:
+        has_websocket = False
+else:
+    has_websocket = False
 
 app = Flask(__name__, 
            template_folder='../templates',
            static_folder='../static')
 CORS(app)
+
+# Initialize WebSocket only if available and in Docker
+if has_websocket:
+    sock = Sock(app)
+    ws_clients = set()
+    ws_lock = Lock()
+    notification_queue = Queue()
 
 # Load config and set database URI
 config = Config()
@@ -129,6 +149,42 @@ def update_preferences(handle):
         return jsonify({'message': f'Successfully updated preferences for {handle}'})
     return jsonify({'error': f'Failed to update preferences for {handle}'}), 400
 
+def broadcast_notification(title, message, url):
+    """Broadcast a notification to all connected WebSocket clients."""
+    if not has_websocket:
+        return
+        
+    notification = {
+        'type': 'notification',
+        'title': title,
+        'message': message,
+        'url': url
+    }
+    with ws_lock:
+        disconnected = set()
+        for client in ws_clients:
+            try:
+                client.send(json.dumps(notification))
+            except Exception:
+                disconnected.add(client)
+        # Clean up disconnected clients
+        for client in disconnected:
+            ws_clients.remove(client)
+
+if has_websocket:
+    @sock.route('/ws')
+    def ws_handler(ws):
+        """Handle WebSocket connections for real-time notifications."""
+        with ws_lock:
+            ws_clients.add(ws)
+        try:
+            while True:
+                # Keep connection alive and handle disconnection
+                ws.receive()
+        except Exception:
+            with ws_lock:
+                ws_clients.remove(ws)
+
 @app.route('/shutdown', methods=['GET'])
 def shutdown():
     """Shutdown the web server."""
@@ -168,11 +224,54 @@ def run_server(host='127.0.0.1', port=3000, debug=False):
         if server:
             shutdown_server()
         
-        # Use werkzeug's development server directly
-        from werkzeug.serving import make_server
-        server = make_server(host, port, app, threaded=True)
-        logger.info(f"Starting web server on port {port}")
-        server.serve_forever()
+        # Use Flask's built-in server with debug output
+        logger.info(f"Starting web server on http://{host}:{port}")
+        app.logger.setLevel(logging.DEBUG if debug else logging.INFO)
+        
+        # Test routes are accessible
+        logger.debug("Testing routes...")
+        test_routes = [
+            ('/', 'index'),
+            ('/api/accounts', 'get_accounts'),
+            ('/api/accounts', 'add_account'),
+        ]
+        for route, endpoint in test_routes:
+            logger.debug(f"Testing route: {route} -> {endpoint}")
+            if endpoint not in app.view_functions:
+                logger.error(f"Route {route} -> {endpoint} not found!")
+        
+        # Set up routes before running
+        logger.debug("Setting up routes...")
+        app.add_url_rule('/', 'index', index)
+        app.add_url_rule('/api/accounts', 'get_accounts', get_accounts, methods=['GET'])
+        app.add_url_rule('/api/accounts', 'add_account', add_account, methods=['POST'])
+        app.add_url_rule('/api/accounts/<handle>', 'remove_account', remove_account, methods=['DELETE'])
+        app.add_url_rule('/api/accounts/<handle>/toggle', 'toggle_account', toggle_account, methods=['POST'])
+        app.add_url_rule('/api/accounts/<handle>/preferences', 'update_preferences', update_preferences, methods=['PATCH'])
+        
+        # Run the server
+        logger.debug("Starting Flask server...")
+        import werkzeug
+        werkzeug.serving.is_running_from_reloader = lambda: False
+        
+        # Create server instance
+        srv = werkzeug.serving.make_server(
+            host=host,
+            port=port,
+            app=app,
+            threaded=True,
+            processes=1,
+            ssl_context=None
+        )
+        
+        # Store server instance
+        server = srv
+        
+        # Start serving
+        srv.serve_forever()
+        
     except Exception as e:
         logger.error(f"Error starting web server: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise  # Re-raise to let the parent thread handle it

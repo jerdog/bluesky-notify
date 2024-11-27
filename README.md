@@ -2,7 +2,7 @@
 
 A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/jerdog/bluesky-notify)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](https://github.com/jerdog/bluesky-notify)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/Flask-3.1.0-blue)](https://pypi.org/project/Flask/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -10,6 +10,7 @@ A cross-platform desktop notification system for Bluesky. Monitor and receive no
 ## Features
 
 - Monitor multiple Bluesky accounts for new posts
+- Real-time browser notifications in Docker environment
 - Desktop notifications support across platforms (macOS, Linux, Windows)
 - Daemon mode for continuous monitoring
 - Web interface for easy account management
@@ -19,6 +20,7 @@ A cross-platform desktop notification system for Bluesky. Monitor and receive no
 - Cross-platform compatibility
 - Consistent CLI interface with clear version and configuration information
 - Comprehensive logging system with rotation and separate error logs
+- WebSocket support for real-time updates in Docker environment
 
 ## Installation
 
@@ -33,7 +35,7 @@ bluesky-notify --version
 
 Example output:
 ```
-Bluesky Notify v0.4.0
+Bluesky Notify v0.4.1
 Config: /Users/username/.local/share/bluesky-notify
 
 A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
@@ -43,19 +45,19 @@ Usage: bluesky-notify [OPTIONS] COMMAND [ARGS]...
 Run 'bluesky-notify start --daemon' to install and run as a system service.
 
 Options:
-  --version  Show version and exit
-  --help     Show this message and exit.
+  --version     Show version and exit
+  --help        Show this message and exit
 
 Commands:
-  add       Add a Bluesky account to monitor.
-  list      List all monitored Bluesky accounts and their notification...
-  remove    Remove a Bluesky account from monitoring.
-  settings  View or update application settings.
-  start     Start the notification service.
-  status    View the current status of the service.
-  stop      Stop the notification service.
-  toggle    Toggle monitoring status for a Bluesky account.
-  update    Update notification preferences for a monitored account.
+  add          Add a Bluesky account to monitor.
+  list         List all monitored Bluesky accounts and their notification...
+  remove       Remove a Bluesky account from monitoring.
+  settings     View or update application settings.
+  start        Start the notification service.
+  status       View the current status of the service.
+  stop         Stop the notification service.
+  toggle       Toggle monitoring status for a Bluesky account.
+  update       Update notification preferences for a monitored account.
 ```
 
 ## Configuration
@@ -65,6 +67,17 @@ The application uses the XDG Base Directory Specification for storing its data:
 - Configuration: `~/.config/bluesky-notify/`
 - Data: `~/.local/share/bluesky-notify/`
 - Cache: `~/.cache/bluesky-notify/`
+- Logs: 
+  - macOS: `~/Library/Logs/bluesky-notify/`
+  - Linux: `~/.local/share/bluesky-notify/logs/`
+
+### Port Configuration
+
+The web interface runs on port 3000 by default. On macOS, port 5000 is avoided as it's reserved for AirPlay. You can change the port using:
+
+```bash
+bluesky-notify settings --port NUMBER
+```
 
 ### Email Notifications (Optional)
 
@@ -78,6 +91,18 @@ export MAILGUN_TO_EMAIL='your-email@example.com'
 ```
 
 ## Usage
+
+### Starting the Service
+
+Start the service with debug logging:
+```bash
+bluesky-notify start --log-level DEBUG
+```
+
+Start as a system service:
+```bash
+bluesky-notify start --daemon
+```
 
 ### Command Help
 
@@ -104,99 +129,94 @@ Options:
 bluesky-notify list
 ```
 
-### Removing an Account
+### Managing Accounts
 
-```bash
-bluesky-notify remove username.bsky.social
-```
-
-### Toggling Account Status
-
+Toggle monitoring for an account:
 ```bash
 bluesky-notify toggle username.bsky.social
 ```
 
-### Updating Notification Preferences
-
+Remove an account:
 ```bash
-bluesky-notify update username.bsky.social --desktop --no-email
+bluesky-notify remove username.bsky.social
 ```
 
-### Checking Service Status
-
-View the current status of the service:
+Update notification preferences:
 ```bash
-bluesky-notify status
+bluesky-notify update username.bsky.social --desktop/--no-desktop --email/--no-email
 ```
 
-This will show:
-- Service status (running/not running) and mode (terminal/daemon)
-- Web interface status and URL
-- Data directory location
-- Current configuration
+## Docker Support
 
-### Starting and Stopping the Service
+When running in Docker, the application supports browser notifications through WebSocket connections. The web interface will automatically detect the Docker environment and enable real-time notifications.
 
-Start the service:
-```bash
-# Run in terminal mode
-bluesky-notify start
+### Environment Variables
 
-# Run as system service (daemon mode)
-bluesky-notify start --daemon
-```
+- `DOCKER_CONTAINER`: Set to 'true' to enable Docker-specific features
+- `PORT`: Override the default port (default: 5001 in Docker)
 
-Stop the service:
-```bash
-bluesky-notify stop
-```
-The stop command will automatically detect whether the service is running in terminal or daemon mode and stop it accordingly.
-
-### Viewing/Updating Settings
-
-View current settings:
-```bash
-bluesky-notify settings
-```
-
-Update settings:
-```bash
-# Change check interval
-bluesky-notify settings --interval 120
-
-# Change log level
-bluesky-notify settings --log-level debug
-
-# Change web interface port
-bluesky-notify settings --port 8080
-```
-
-Available settings:
-- Check interval (in seconds)
-- Log level (DEBUG, INFO, WARNING, ERROR)
-- Web interface port
-
-### Logging
+## Logging
 
 The application uses a comprehensive logging system:
 
-- Log files are stored in `~/.local/share/bluesky-notify/logs/`
+- Log files are stored in platform-specific locations:
+  - macOS: `~/Library/Logs/bluesky-notify/`
+  - Linux: `~/.local/share/bluesky-notify/logs/`
+
 - Two log files are maintained:
   - `bluesky-notify.log`: General application logs (INFO level and above)
-  - `bluesky-notify.error.log`: Error-specific logs (ERROR level only)
+  - `bluesky-notify.error.log`: Error logs only (ERROR level)
+
 - Log rotation is enabled:
   - Maximum file size: 1MB
   - Keeps up to 5 backup files
   - Rotated files are named with numerical suffixes (e.g., bluesky-notify.log.1)
 
-Log levels can be configured using the settings command:
+- Debug logging can be enabled with:
+  ```bash
+  bluesky-notify start --log-level DEBUG
+  ```
+
+## Development
+
+### Requirements
+
+- Python 3.9 or higher
+- Dependencies listed in pyproject.toml
+
+### Setting Up Development Environment
+
+1. Clone the repository:
 ```bash
-bluesky-notify settings --log-level debug  # Set to DEBUG level
-bluesky-notify settings --log-level info   # Set to INFO level (default)
+git clone https://github.com/jerdog/bluesky-notify.git
+cd bluesky-notify
 ```
+
+2. Install development dependencies:
+```bash
+pip install -e ".[dev]"
+```
+
+3. Run tests:
+```bash
+pytest
+```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Support
+
+If you encounter any issues or have questions, please file an issue on the GitHub repository.
 
 ## Version History
 
+- 0.4.1: Validate Docker container image builds correctly, make CLI co-exist
 - 0.4.0: Add web interface to daemon + terminal mode
 - 0.3.0: Add daemon mode, web interface, and improved CLI help text
 - 0.2.7: Fixed CLI output formatting and help text organization
@@ -205,35 +225,6 @@ bluesky-notify settings --log-level info   # Set to INFO level (default)
 - 0.2.4: Added version and config information to all commands
 - 0.2.3: Refined CLI presentation and version display
 - 0.2.0: Initial public release
-
-## Development
-
-1. Clone the repository:
-```bash
-git clone https://github.com/jerdog/bluesky-notify.git
-cd bluesky-notify
-```
-
-2. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install development dependencies:
-```bash
-pip install -e ".[dev]"
-```
-
-4. Build the package:
-```bash
-python -m build
-```
-
-5. Install the built package:
-```bash
-pip install dist/bluesky_notify-0.4.0-py3-none-any.whl
-```
 
 ## Troubleshooting
 
@@ -250,15 +241,3 @@ pip install dist/bluesky_notify-0.4.0-py3-none-any.whl
    - Verify Bluesky handles are entered correctly (without '@' symbol)
    - Check your internet connection
    - Ensure the Bluesky API is accessible
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-If you encounter any issues or have questions, please file an issue on the GitHub repository.
