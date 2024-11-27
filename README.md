@@ -29,7 +29,7 @@ bluesky-notify --version
 
 Example output:
 ```
-Bluesky Notify v0.2.5
+Bluesky Notify v0.2.7
 Config: /Users/username/.local/share/bluesky-notify
 ```
 
@@ -116,8 +116,10 @@ Available settings:
 
 ## Version History
 
-- 0.2.5: Enhanced CLI interface with consistent version and config display
-- 0.2.4: Improved help text formatting and command output
+- 0.2.7: Fixed CLI output formatting and help text organization
+- 0.2.6: Enhanced CLI interface with consistent version and config display
+- 0.2.5: Improved help text formatting and command output
+- 0.2.4: Added version and config information to all commands
 - 0.2.3: Refined CLI presentation and version display
 - 0.2.0: Initial public release
 
@@ -147,7 +149,7 @@ python -m build
 
 5. Install the built package:
 ```bash
-pip install dist/bluesky_notify-0.2.5-py3-none-any.whl
+pip install dist/bluesky_notify-0.2.7-py3-none-any.whl
 ```
 
 ## Troubleshooting
