@@ -4,3 +4,4 @@ include requirements.txt
 recursive-include src/bluesky_notify/data *
 recursive-include src/bluesky_notify/templates *
 recursive-include src/bluesky_notify/static *
+recursive-include src/bluesky_notify/services *

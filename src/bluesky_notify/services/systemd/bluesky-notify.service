@@ -1,0 +1,13 @@
+[Unit]
+Description=Bluesky Notify Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bluesky-notify start
+Restart=always
+RestartSec=10
+User=%i
+
+[Install]
+WantedBy=multi-user.target

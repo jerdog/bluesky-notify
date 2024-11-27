@@ -2,7 +2,7 @@
 
 A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
 
-[![Version](https://img.shields.io/badge/version-0.2.7-blue.svg)](https://github.com/jerdog/bluesky-notify)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/jerdog/bluesky-notify)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -10,6 +10,7 @@ A cross-platform desktop notification system for Bluesky. Monitor and receive no
 
 - Monitor multiple Bluesky accounts for new posts
 - Desktop notifications support across platforms (macOS, Linux, Windows)
+- Daemon mode for continuous monitoring
 - Email notifications support (requires Mailgun configuration)
 - XDG-compliant configuration storage
 - SQLite database for reliable post tracking
@@ -29,8 +30,27 @@ bluesky-notify --version
 
 Example output:
 ```
-Bluesky Notify v0.2.7
+Bluesky Notify v0.3.0
 Config: /Users/username/.local/share/bluesky-notify
+
+A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
+
+Usage: bluesky-notify [OPTIONS] COMMAND [ARGS]...
+
+Run 'bluesky-notify start --daemon' to install and run as a system service.
+
+Options:
+  --version  Show version and exit
+  --help     Show this message and exit.
+
+Commands:
+  add       Add a Bluesky account to monitor.
+  list      List all monitored Bluesky accounts and their notification...
+  remove    Remove a Bluesky account from monitoring.
+  settings  View or update application settings.
+  start     Start the notification service.
+  toggle    Toggle monitoring status for a Bluesky account.
+  update    Update notification preferences for a monitored account.
 ```
 
 ## Configuration
@@ -99,11 +119,31 @@ bluesky-notify update username.bsky.social --desktop --no-email
 
 ### Starting the Notification Service
 
+You can run the service in two ways:
+
+1. Direct mode (run in terminal):
 ```bash
 bluesky-notify start
 ```
+The service will run in the foreground and can be stopped with Ctrl+C.
 
-The service will run continuously and check for new posts at regular intervals (default: 60 seconds). Press Ctrl+C to stop the service.
+2. Daemon mode (install and run as system service):
+```bash
+bluesky-notify start --daemon
+```
+This will:
+- Install the appropriate service file for your platform (launchd on macOS, systemd on Linux)
+- Start the service automatically
+- Configure it to start on system boot
+- Set up logging
+
+To stop the service:
+- macOS: `launchctl unload ~/Library/LaunchAgents/com.bluesky-notify.plist`
+- Linux: `systemctl --user stop bluesky-notify`
+
+To view logs:
+- macOS: Check `~/Library/Logs/bluesky-notify.log`
+- Linux: Run `journalctl --user -u bluesky-notify`
 
 ### Viewing/Updating Settings
 
@@ -116,6 +156,7 @@ Available settings:
 
 ## Version History
 
+- 0.3.0: Add daemon mode and improved CLI help text formatting
 - 0.2.7: Fixed CLI output formatting and help text organization
 - 0.2.6: Enhanced CLI interface with consistent version and config display
 - 0.2.5: Improved help text formatting and command output
@@ -149,7 +190,7 @@ python -m build
 
 5. Install the built package:
 ```bash
-pip install dist/bluesky_notify-0.2.7-py3-none-any.whl
+pip install dist/bluesky_notify-0.3.0-py3-none-any.whl
 ```
 
 ## Troubleshooting
