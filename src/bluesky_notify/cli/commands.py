@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import click
 import os
+from importlib.metadata import version
 from rich.console import Console
 from flask import Flask
 from bluesky_notify.core.notifier import BlueSkyNotifier
@@ -8,19 +9,23 @@ from bluesky_notify.core.settings import Settings
 from bluesky_notify.core.database import db, add_monitored_account, list_monitored_accounts, toggle_account_status, update_notification_preferences, remove_monitored_account
 from bluesky_notify.core.config import Config, get_data_dir
 import asyncio
+import sys
 
 console = Console()
+
+# Get package version
+try:
+    __version__ = version("bluesky-notify")
+except:
+    __version__ = "unknown"
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# Load config
+# Load config and get data directory
 config = Config()
-
-# Ensure data directory exists and set database path
-data_dir = get_data_dir()
-os.makedirs(data_dir, exist_ok=True)
-db_path = os.path.join(data_dir, 'bluesky_notify.db')
+app.config.from_object(config)
+db_path = os.path.join(config.data_dir, 'bluesky_notify.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
@@ -29,10 +34,50 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-@click.group()
+def print_version(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    console.print(f"[blue]Bluesky Notify v{__version__}[/blue]")
+    console.print(f"Config: {config.data_dir}")
+    ctx.exit()
+
+class CustomGroup(click.Group):
+    def get_help(self, ctx):
+        # Print version and config before the help text
+        console.print(f"[blue]Bluesky Notify v{__version__}[/blue]")
+        console.print(f"Config: {config.data_dir}")
+        
+        # Get the default help text
+        help_text = super().get_help(ctx)
+        
+        # Split the help text into lines
+        lines = help_text.split('\n')
+        
+        # Find the usage line and description lines
+        usage_line = next(i for i, line in enumerate(lines) if line.startswith('Usage:'))
+        
+        # Move the usage line after the description
+        usage = lines.pop(usage_line)
+        desc_end = next(i for i, line in enumerate(lines) if not line and i > 0)
+        lines.insert(desc_end + 1, '')  # Add blank line after description
+        lines.insert(desc_end + 1, usage)
+        
+        return '\n'.join(lines)
+
+    def invoke(self, ctx):
+        # Don't print header for --version or --help
+        if not ctx.protected_args and not ctx.args:
+            return super().invoke(ctx)
+        if ctx.protected_args[0] not in ['--version', '--help']:
+            console.print(f"[blue]Bluesky Notify v{__version__}[/blue]")
+            console.print(f"Config: {config.data_dir}\n")
+        return super().invoke(ctx)
+
+@click.group(cls=CustomGroup)
+@click.option('--version', is_flag=True, callback=print_version, expose_value=False, is_eager=True,
+              help='Show version and exit')
 def cli():
-    """Bluesky Notification Manager - Track and receive notifications from Bluesky accounts"""
-    pass
+    """A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts."""
 
 @cli.command()
 @click.argument('handle')
@@ -129,8 +174,6 @@ def remove(handle):
 def settings(interval, log_level):
     """View or update application settings"""
     settings = Settings()
-    current_settings = settings.get_settings()
-    
     if interval is not None:
         settings.update_settings({'check_interval': interval})
         console.print(f"[green]Updated check interval to {interval} seconds[/green]")
@@ -142,9 +185,9 @@ def settings(interval, log_level):
     if interval is None and log_level is None:
         # Display current settings
         console.print("\nCurrent Settings:")
-        console.print(f"Check Interval: {current_settings.get('check_interval', 60)} seconds")
-        console.print(f"Log Level: {current_settings.get('log_level', 'INFO')}")
-        console.print(f"Port: {current_settings.get('port', 3000)}")
+        console.print(f"Check Interval: {settings.get_settings().get('check_interval', 60)} seconds")
+        console.print(f"Log Level: {settings.get_settings().get('log_level', 'INFO')}")
+        console.print(f"Port: {settings.get_settings().get('port', 3000)}")
 
 @cli.command()
 def start():
@@ -164,8 +207,12 @@ def start():
         except KeyboardInterrupt:
             console.print("\n[yellow]Shutting down notification service...[/yellow]")
             notifier.stop()
+            loop.close()
+            sys.exit(0)
         except Exception as e:
             console.print(f"[red]Error in notification service: {e}[/red]")
+            loop.close()
+            sys.exit(1)
         finally:
             loop.close()
 

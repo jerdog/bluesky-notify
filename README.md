@@ -1,6 +1,10 @@
 # Bluesky Notify
 
-A command-line tool for monitoring and receiving notifications from Bluesky social media accounts.
+A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
+
+[![Version](https://img.shields.io/badge/version-0.2.7-blue.svg)](https://github.com/jerdog/bluesky-notify)
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## Features
 
@@ -10,11 +14,23 @@ A command-line tool for monitoring and receiving notifications from Bluesky soci
 - XDG-compliant configuration storage
 - SQLite database for reliable post tracking
 - Cross-platform compatibility
+- Consistent CLI interface with clear version and configuration information
 
 ## Installation
 
 ```bash
 pip install bluesky-notify
+```
+
+To verify the installation:
+```bash
+bluesky-notify --version
+```
+
+Example output:
+```
+Bluesky Notify v0.2.5
+Config: /Users/username/.local/share/bluesky-notify
 ```
 
 ## Configuration
@@ -38,11 +54,20 @@ export MAILGUN_TO_EMAIL='your-email@example.com'
 
 ## Usage
 
+### Command Help
+
+To see all available commands and options:
+```bash
+bluesky-notify --help
+```
+
 ### Adding an Account to Monitor
 
 ```bash
-bluesky-notify add @username.bsky.social
+bluesky-notify add username.bsky.social
 ```
+
+Note: The handle should be provided without the '@' symbol.
 
 Options:
 - `--desktop/--no-desktop`: Enable/disable desktop notifications (default: enabled)
@@ -57,19 +82,19 @@ bluesky-notify list
 ### Removing an Account
 
 ```bash
-bluesky-notify remove @username.bsky.social
+bluesky-notify remove username.bsky.social
 ```
 
 ### Toggling Account Status
 
 ```bash
-bluesky-notify toggle @username.bsky.social
+bluesky-notify toggle username.bsky.social
 ```
 
 ### Updating Notification Preferences
 
 ```bash
-bluesky-notify update @username.bsky.social --desktop --no-email
+bluesky-notify update username.bsky.social --desktop --no-email
 ```
 
 ### Starting the Notification Service
@@ -78,13 +103,23 @@ bluesky-notify update @username.bsky.social --desktop --no-email
 bluesky-notify start
 ```
 
-The service will run continuously and check for new posts at regular intervals. Press Ctrl+C to stop the service.
+The service will run continuously and check for new posts at regular intervals (default: 60 seconds). Press Ctrl+C to stop the service.
 
 ### Viewing/Updating Settings
 
 ```bash
 bluesky-notify settings
 ```
+
+Available settings:
+- Check interval (in seconds)
+
+## Version History
+
+- 0.2.5: Enhanced CLI interface with consistent version and config display
+- 0.2.4: Improved help text formatting and command output
+- 0.2.3: Refined CLI presentation and version display
+- 0.2.0: Initial public release
 
 ## Development
 
@@ -105,9 +140,35 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
+4. Build the package:
+```bash
+python -m build
+```
+
+5. Install the built package:
+```bash
+pip install dist/bluesky_notify-0.2.5-py3-none-any.whl
+```
+
+## Troubleshooting
+
+1. **Version Check**
+   - Run `bluesky-notify --version` to verify the installed version
+   - Make sure you have the latest version installed
+
+2. **No Notifications**
+   - Check if desktop notifications are enabled in your system
+   - Verify the notification service is running
+   - Check logs in `~/.local/share/bluesky-notify/logs/`
+
+3. **API Errors**
+   - Verify Bluesky handles are entered correctly (without '@' symbol)
+   - Check your internet connection
+   - Ensure the Bluesky API is accessible
+
 ## License
 
-MIT License - see LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 

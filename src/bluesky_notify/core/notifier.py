@@ -40,7 +40,7 @@ class BlueSkyNotifier:
     def __init__(self, app=None):
         """Initialize the BlueSkyNotifier."""
         self.app = app
-        self.base_url = "https://public.api.bsky.app/xrpc"
+        self.base_url = "https://api.bsky.app/xrpc"
         self.check_interval = 60  # seconds
         self._running = False
         self.notifier = DesktopNotifier()
@@ -76,11 +76,11 @@ class BlueSkyNotifier:
             Exception: If API request fails
         """
         try:
-            # Remove @ if present
-            handle = handle.lstrip('@')
+            # Remove @ if present and convert to lowercase for API request
+            api_handle = handle.lstrip('@').lower()
             
             # Get profile information
-            response = requests.get(f"{self.base_url}/app.bsky.actor.getProfile", params={"actor": handle})
+            response = requests.get(f"{self.base_url}/app.bsky.actor.getProfile", params={"actor": api_handle})
             response.raise_for_status()
             data = response.json()
             

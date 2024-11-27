@@ -20,7 +20,6 @@ def get_data_dir() -> str:
     data_dir = base_dir / 'bluesky-notify'
     # Ensure the directory exists
     data_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Using data directory: {data_dir}")
     return str(data_dir)
 
 class Config:
@@ -28,12 +27,12 @@ class Config:
     
     def __init__(self):
         """Initialize Config manager with default values."""
-        data_dir = get_data_dir()
+        self.data_dir = get_data_dir()
         self._config = {
             'NOTIFICATION_METHOD': 'desktop',
             'CHECK_INTERVAL': '60',
             'LOG_LEVEL': 'INFO',
-            'DATABASE_URL': f'sqlite:///{data_dir}/bluesky_notify.db'
+            'DATABASE_URL': f'sqlite:///{self.data_dir}/bluesky_notify.db'
         }
     
     def get(self, key: str, default: Any = None) -> Any:
