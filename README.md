@@ -7,6 +7,8 @@ A cross-platform desktop notification system for Bluesky. Monitor and receive no
 [![Flask](https://img.shields.io/badge/Flask-3.1.0-blue)](https://pypi.org/project/Flask/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+https://pypi.org/project/bluesky-notify/
+
 ## Features
 
 - Monitor multiple Bluesky accounts for new posts
@@ -24,9 +26,13 @@ A cross-platform desktop notification system for Bluesky. Monitor and receive no
 
 ## Installation
 
+- From local / repo download
 ```bash
 pip install bluesky-notify
 ```
+
+- From PyPi
+```bash
 
 To verify the installation:
 ```bash
