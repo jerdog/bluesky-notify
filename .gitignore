@@ -82,3 +82,18 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+
+# Service files
+~/Library/LaunchAgents/com.bluesky-notify.plist
+~/.config/systemd/user/bluesky-notify.service
+
+# System files
+*.pid
+*.socket
+.systemd/
+
+# Cache
+.cache/
+*.pyc
+*.pyo
+*.pyd

@@ -41,75 +41,16 @@ function showNotification(message, type = 'success') {
     toast.show();
 }
 
-// Handle adding a new account
-async function handleAddAccount(event) {
-    event.preventDefault();
-    
-    let handle = document.getElementById('handle').value.trim();
-    const desktopNotif = document.getElementById('desktopNotif').checked;
-    const emailNotif = document.getElementById('emailNotif').checked;
-
-    // Remove @ if present and clean invisible characters
-    if (handle.startsWith('@')) {
-        handle = handle.substring(1);
-    }
-    // Clean invisible characters and normalize
-    handle = handle.replace(/[\u200B-\u200D\u202A-\u202E\uFEFF]/g, '').normalize();
-
-    // Basic handle validation
-    if (!handle) {
-        showNotification('Please enter a Bluesky handle', 'error');
-        return;
-    }
-
-    // Validate handle format
-    const handleRegex = /^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])*$/;
-    if (!handleRegex.test(handle)) {
-        showNotification('Please enter a valid Bluesky handle (e.g., user.bsky.social)', 'error');
-        return;
-    }
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/accounts`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                handle,
-                notification_preferences: {
-                    desktop: desktopNotif,
-                    email: emailNotif
-                }
-            })
-        });
-
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to add account');
-        }
-
-        document.getElementById('handle').value = '';
-        await loadAccounts();
-        showNotification('Account added successfully');
-    } catch (error) {
-        console.error('Error adding account:', error);
-        showNotification(error.message || 'Failed to add account', 'error');
-    }
-}
-
 // Load and display accounts
 async function loadAccounts() {
     try {
         const response = await fetch(`${API_BASE_URL}/accounts`);
-        const data = await response.json();
-        
         if (!response.ok) {
-            throw new Error(data.error || 'Failed to load accounts');
+            throw new Error('Failed to load accounts');
         }
         
-        const accounts = data?.data?.accounts || [];
+        const data = await response.json();
+        const accounts = data.accounts || [];
         const accountsTable = document.getElementById('accountsTable');
         accountsTable.innerHTML = '';
         
@@ -132,7 +73,6 @@ async function loadAccounts() {
             const accountCell = document.createElement('td');
             accountCell.innerHTML = `
                 <div class="d-flex align-items-center">
-                    ${account.avatar_url ? `<img src="${account.avatar_url}" class="rounded-circle me-2" width="32" height="32" alt="${account.handle}'s avatar">` : ''}
                     <div>
                         <div class="fw-bold"><a href="${BSKY_BASE_URL}${account.handle}" target="_blank">${account.display_name || account.handle}</a></div>
                         <div class="text-muted">@${account.handle}</div>
@@ -173,7 +113,7 @@ async function loadAccounts() {
             // Actions cell
             const actionsCell = document.createElement('td');
             actionsCell.innerHTML = `
-                <button class="btn btn-sm btn-outline-danger" onclick="removeAccount('${account.did}')">
+                <button class="btn btn-sm btn-outline-danger" onclick="removeAccount('${account.handle}')">
                     <i class="bi bi-trash"></i>
                 </button>
             `;
@@ -188,132 +128,185 @@ async function loadAccounts() {
         });
     } catch (error) {
         console.error('Error loading accounts:', error);
-        showNotification('Failed to load accounts', 'error');
+        const accountsTable = document.getElementById('accountsTable');
+        accountsTable.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-danger">
+                    Error loading accounts. Please try again later.
+                </td>
+            </tr>
+        `;
     }
 }
 
-// Add periodic refresh of accounts
-function startPeriodicRefresh() {
-    setInterval(async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/accounts`);
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to refresh accounts');
-            }
-            
-            if (data.data && data.data.accounts) {
-                updateAccountsTable(data.data.accounts);
-            }
-        } catch (error) {
-            console.error('Error refreshing accounts:', error);
-        }
-    }, REFRESH_INTERVAL);
-}
+// Add account handler
+async function handleAddAccount(event) {
+    event.preventDefault();
+    const form = event.target;
+    let handleValue = form.querySelector('#handle').value.trim();
+    const desktopNotif = form.querySelector('#desktopNotif').checked;
+    const emailNotif = form.querySelector('#emailNotif').checked;
 
-// Update accounts table without full reload
-function updateAccountsTable(accounts) {
-    const accountsTable = document.getElementById('accountsTableBody');
-    if (!accountsTable) return;
+    // Remove @ if present and clean invisible characters
+    if (handleValue.startsWith('@')) {
+        handleValue = handleValue.substring(1);
+    }
+    // Clean invisible characters and normalize
+    handleValue = handleValue.replace(/[\u200B-\u200D\u202A-\u202E\uFEFF]/g, '').normalize();
 
-    accounts.forEach(account => {
-        const existingRow = document.querySelector(`tr[data-handle="${account.handle}"]`);
-        if (existingRow) {
-            // Update preferences in existing row
-            const desktopCheckbox = existingRow.querySelector('input[data-type="desktop"]');
-            const emailCheckbox = existingRow.querySelector('input[data-type="email"]');
-            
-            if (desktopCheckbox && account.notification_preferences) {
-                desktopCheckbox.checked = account.notification_preferences.desktop || false;
-            }
-            if (emailCheckbox && account.notification_preferences) {
-                emailCheckbox.checked = account.notification_preferences.email || false;
-            }
-        }
-    });
-}
+    // Basic handle validation
+    if (!handleValue) {
+        showNotification('Please enter a Bluesky handle', 'error');
+        return;
+    }
 
-// Toggle notification settings
-async function toggleNotification(handle, type, enabled) {
+    // Validate handle format (simplified regex)
+    const handleRegex = /^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])*$/;
+    if (!handleRegex.test(handleValue)) {
+        showNotification('Please enter a valid Bluesky handle (e.g., user.bsky.social)', 'error');
+        return;
+    }
+    
     try {
-        // Get the current state of both checkboxes
-        const row = document.querySelector(`tr[data-handle="${handle}"]`);
-        const desktopCheckbox = row.querySelector('input[data-type="desktop"]');
-        const emailCheckbox = row.querySelector('input[data-type="email"]');
-        
-        // Create preferences object with both settings
-        const preferences = {
-            desktop: desktopCheckbox.checked,
-            email: emailCheckbox.checked
-        };
-        
-        // Override the toggled preference
-        preferences[type] = enabled;
-        
-        console.log(`Updating preferences for ${handle}:`, preferences);
-        
-        const response = await fetch(`${API_BASE_URL}/accounts/${handle}/preferences`, {
-            method: 'PUT',
+        const response = await fetch(`${API_BASE_URL}/accounts`, {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(preferences)
+            body: JSON.stringify({
+                handle: handleValue,
+                desktop: desktopNotif,
+                email: emailNotif
+            })
         });
 
         const data = await response.json();
         
         if (!response.ok) {
-            throw new Error(data.error || 'Failed to update notification settings');
+            throw new Error(data.error || 'Failed to add account');
         }
 
-        // Update UI with the returned data
-        if (data.data && data.data.account && data.data.account.notification_preferences) {
-            const prefs = data.data.account.notification_preferences;
-            desktopCheckbox.checked = prefs.desktop || false;
-            emailCheckbox.checked = prefs.email || false;
-            console.log('Updated UI with preferences:', prefs);
-        } else {
-            console.warn('No preference data in response:', data);
-        }
-
-        showNotification('Notification settings updated');
+        form.querySelector('#handle').value = '';
+        await loadAccounts();
+        showNotification('Account added successfully');
     } catch (error) {
-        console.error('Error updating notification settings:', error);
-        showNotification(error.message || 'Failed to update notification settings', 'error');
-        
-        // Revert checkbox state
-        const checkbox = row.querySelector(`input[data-type="${type}"]`);
-        if (checkbox) {
-            checkbox.checked = !enabled;
-        }
+        console.error('Error adding account:', error);
+        showNotification(error.message || 'Failed to add account', 'error');
     }
 }
 
-// Remove an account
-async function removeAccount(did) {
-    // Add confirmation dialog
-    if (!confirm('Are you sure you want to remove this account?')) {
-        return;
-    }
-
+// Toggle notification preferences
+async function toggleNotification(handle, type, enabled) {
     try {
-        const response = await fetch(`/api/accounts/did/${did}`, {
-            method: 'DELETE'
+        const response = await fetch(`${API_BASE_URL}/accounts/${handle}/preferences`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                [type]: enabled
+            }),
         });
         
         if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to remove account');
+            throw new Error('Failed to update preferences');
         }
-
-        // Show success message
-        showNotification('Account removed successfully');
         
-        // Refresh the accounts list
-        await loadAccounts();
+        loadAccounts();
+    } catch (error) {
+        console.error('Error updating preferences:', error);
+        alert('Failed to update notification preferences');
+    }
+}
+
+// Remove account
+async function removeAccount(handle) {
+    if (!confirm(`Are you sure you want to stop monitoring @${handle}?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/accounts/${handle}`, {
+            method: 'DELETE',
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to remove account');
+        }
+        
+        loadAccounts();
     } catch (error) {
         console.error('Error removing account:', error);
-        showNotification(error.message, 'error');
+        alert('Failed to remove account');
     }
+}
+
+// Start periodic refresh
+function startPeriodicRefresh() {
+    setInterval(loadAccounts, REFRESH_INTERVAL);
+}
+
+// WebSocket connection for real-time notifications
+let ws;
+let wsRetryCount = 0;
+const MAX_RETRIES = 5;
+
+// Check if we're running in Docker by looking at the hostname
+// Docker containers will have a hostname that's different from localhost/127.0.0.1
+const isDocker = !['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+// Only initialize WebSocket and request notification permission in Docker
+if (isDocker) {
+    // Request notification permission on page load
+    if ("Notification" in window) {
+        if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+            Notification.requestPermission().then(function (permission) {
+                if (permission === "granted") {
+                    console.log("Notification permission granted");
+                }
+            });
+        }
+    }
+
+    // Initialize WebSocket connection
+    function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = function() {
+            console.log('WebSocket connected');
+            wsRetryCount = 0;
+        };
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'notification' && Notification.permission === "granted") {
+                const notification = new Notification(data.title, {
+                    body: data.message
+                });
+                
+                notification.onclick = function() {
+                    window.open(data.url, '_blank');
+                    notification.close();
+                };
+            }
+        };
+        
+        ws.onclose = function() {
+            console.log('WebSocket disconnected');
+            if (wsRetryCount < MAX_RETRIES) {
+                wsRetryCount++;
+                setTimeout(connectWebSocket, 1000 * Math.pow(2, wsRetryCount));
+            }
+        };
+        
+        ws.onerror = function(error) {
+            console.error('WebSocket error:', error);
+        };
+    }
+
+    // Start WebSocket connection
+    connectWebSocket();
 }

@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "build>=1.0.0", "twine>=4.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bluesky-notify"
+version = "0.4.1"
+authors = [
+    { name = "Jeremy Meiss", email = "jeremy.meiss@gmail.com" },
+]
+description = "A cross-platform desktop notification system for Bluesky"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "atproto>=0.0.55",
+    "sqlalchemy>=2.0.36",
+    "flask>=3.1.0",
+    "flask-cors>=5.0.0",
+    "flask-sqlalchemy>=3.1.1",
+    "click>=8.1.7",
+    "python-dotenv>=1.0.1",
+    "rich>=13.9.4",
+    "desktop-notifier>=3.5.0",
+    "alembic>=1.14.0",
+    "requests>=2.31.0",
+    "urllib3>=2.0.7",
+    "certifi>=2023.7.22",
+    "charset-normalizer>=3.3.2",
+    "idna>=3.4",
+    "backoff>=2.2.1",
+    "aiohttp>=3.8.0",
+    "psutil>=5.9.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "flake8>=5.0.0",
+    "build>=1.0.0",
+    "twine>=4.0.0"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/jerdog/bluesky-notify"
+"Bug Tracker" = "https://github.com/jerdog/bluesky-notify/issues"
+
+[project.scripts]
+bluesky-notify = "bluesky_notify.cli.commands:main"
+
+[tool.setuptools.package-data]
+"*" = ["services/**/*"]

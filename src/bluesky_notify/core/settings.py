@@ -4,12 +4,18 @@ import os
 import json
 from pathlib import Path
 from typing import Dict, Any
+import platform
 
 def get_port() -> int:
     """Get the appropriate port based on the environment."""
     # Check if we're running in Docker
     if os.environ.get('DOCKER_CONTAINER') == 'true':
         return int(os.environ.get('PORT', 5001))  # Docker container port
+    
+    # For macOS, never use port 5000 as it's reserved for AirPlay
+    if platform.system() == 'Darwin':
+        return int(os.environ.get('PORT', 3000))  # Default to 3000 on macOS
+    
     return int(os.environ.get('PORT', 3000))  # Local development port
 
 class Settings:
@@ -17,7 +23,9 @@ class Settings:
     
     def __init__(self):
         """Initialize Settings manager."""
-        self.settings_file = Path('data/settings.json')
+        from .config import get_data_dir
+        data_dir = Path(get_data_dir())
+        self.settings_file = data_dir / 'settings.json'
         self._ensure_settings_file()
     
     def _ensure_settings_file(self) -> None:

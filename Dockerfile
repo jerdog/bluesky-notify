@@ -25,10 +25,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories with proper permissions
-RUN mkdir -p /app/src/bluesky_notify/data /app/logs /app/instance \
-    && chmod -R 777 /app/src/bluesky_notify/data \
-    && chmod -R 777 /app/logs \
-    && chmod 777 /app/instance
+RUN mkdir -p /app/.local/share/bluesky-notify/logs /app/.local/share/bluesky-notify/data \
+    && chmod -R 777 /app/.local/share/bluesky-notify
 
 # Create a non-root user
 RUN useradd -m -r appuser \
@@ -43,12 +41,15 @@ RUN pip install --no-cache-dir .
 # Switch to non-root user
 USER appuser
 
+# Set HOME for XDG base directories
+ENV HOME=/app
+
 # Expose the application port
 EXPOSE 5001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5001/health')"
+    CMD curl -f http://localhost:5001/ || exit 1
 
 # Run the application
 CMD ["python", "run.py"]
