@@ -255,23 +255,31 @@ def run_server(host='127.0.0.1', port=3000, debug=False):
         werkzeug.serving.is_running_from_reloader = lambda: False
         
         # Create server instance
-        srv = werkzeug.serving.make_server(
-            host=host,
-            port=port,
-            app=app,
-            threaded=True,
-            processes=1,
-            ssl_context=None
-        )
+        try:
+            srv = werkzeug.serving.make_server(
+                host=host,
+                port=port,
+                app=app,
+                threaded=True,
+                processes=1,
+                ssl_context=None
+            )
+        except Exception as e:
+            logger.error(f"Failed to create server: {e}")
+            raise
         
         # Store server instance
         server = srv
         
         # Start serving
-        srv.serve_forever()
+        try:
+            srv.serve_forever()
+        except Exception as e:
+            logger.error(f"Server failed while running: {e}")
+            raise
         
     except Exception as e:
         logger.error(f"Error starting web server: {e}")
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise  # Re-raise to let the parent thread handle it

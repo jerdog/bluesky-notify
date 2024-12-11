@@ -19,6 +19,7 @@ from bluesky_notify.utils.network import check_service_status, is_port_in_use
 import signal
 import time
 from bluesky_notify.core.logger import get_logger, get_log_dir
+from datetime import datetime
 
 console = Console()
 
@@ -315,6 +316,31 @@ def settings(interval, log_level, port):
     console.print("--log-level LEVEL    Set log level (DEBUG, INFO, WARNING, or ERROR)")
     console.print("--port NUMBER        Set web interface port (1024-65535)")
 
+def get_executable_path():
+    """Find the bluesky-notify executable in common installation paths."""
+    possible_paths = [
+        '/opt/local/bin/bluesky-notify',  # MacPorts
+        '/usr/local/bin/bluesky-notify',  # System Python
+        '/opt/homebrew/bin/bluesky-notify',  # Homebrew
+        os.path.expanduser('~/.local/bin/bluesky-notify'),  # User install
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+            
+    # If not found in common paths, try to find it in PATH
+    try:
+        which_result = subprocess.run(['which', 'bluesky-notify'], 
+                                    capture_output=True, 
+                                    text=True, 
+                                    check=True)
+        return which_result.stdout.strip()
+    except subprocess.CalledProcessError:
+        pass
+        
+    raise click.ClickException("Could not find bluesky-notify executable. Please ensure it's installed correctly.")
+
 @cli.command()
 @click.option('-d', '--daemon', is_flag=True, help='Install and run as a system service')
 @click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False),
@@ -328,6 +354,18 @@ def start(daemon, log_level):
     settings = Settings()
     port = settings.get_settings().get('port', 3000)
     
+    # Configure logging first
+    logger = get_logger(__name__, log_level)
+    
+    # Set up exception hook to log uncaught exceptions
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+    
+    sys.excepthook = handle_exception
+    
     if daemon:
         system = platform.system()
         if system == 'Darwin':  # macOS
@@ -339,14 +377,45 @@ def start(daemon, log_level):
             launch_agents_dir = os.path.expanduser('~/Library/LaunchAgents')
             os.makedirs(launch_agents_dir, exist_ok=True)
             
+            # Create necessary directories
+            log_dir = os.path.expanduser('~/Library/Logs')
+            os.makedirs(log_dir, exist_ok=True)
+            
+            # Ensure log files exist and are writable
+            for log_file in ['bluesky-notify.log', 'bluesky-notify.error.log']:
+                log_path = os.path.join(log_dir, log_file)
+                try:
+                    with open(log_path, 'a') as f:
+                        f.write(f"Log file initialized at {datetime.now()}\n")
+                    os.chmod(log_path, 0o644)
+                except Exception as e:
+                    console.print(f"[red]Error creating log file {log_path}: {e}[/red]")
+                    return
+            
             # Copy plist file
             plist_dest = os.path.join(launch_agents_dir, 'com.bluesky-notify.plist')
             shutil.copy2(plist_src, plist_dest)
             
+            # Replace placeholders in plist file
+            with open(plist_dest, 'r') as f:
+                content = f.read()
+            
+            # Replace paths with absolute paths
+            home_dir = os.path.expanduser('~')
+            content = content.replace('/Users/jerdog', home_dir)
+            content = content.replace('/opt/local/bin/bluesky-notify', get_executable_path())
+            content = content.replace('~/Library/Logs', f'{home_dir}/Library/Logs')
+            
+            with open(plist_dest, 'w') as f:
+                f.write(content)
+            
+            # Set correct permissions
+            os.chmod(plist_dest, 0o644)
+            
             # Load the service
             try:
                 subprocess.run(['launchctl', 'unload', plist_dest], capture_output=True)
-                subprocess.run(['launchctl', 'load', plist_dest], check=True)
+                subprocess.run(['launchctl', 'load', '-w', plist_dest], check=True)
                 console.print("[green]Service installed and started successfully![/green]")
                 console.print(f"Logs will be available at:\n- ~/Library/Logs/bluesky-notify.log\n- ~/Library/Logs/bluesky-notify.error.log")
                 console.print(f"\nWeb interface will be available at: [link=http://127.0.0.1:{port}]http://127.0.0.1:{port}[/link]")
@@ -373,6 +442,7 @@ def start(daemon, log_level):
             with open(service_dest, 'r') as f:
                 content = f.read()
             content = content.replace('%i', os.getenv('USER'))
+            content = content.replace('/opt/homebrew/bin/bluesky-notify', get_executable_path())
             with open(service_dest, 'w') as f:
                 f.write(content)
             

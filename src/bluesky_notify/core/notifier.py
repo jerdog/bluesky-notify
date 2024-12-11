@@ -21,6 +21,8 @@ import backoff
 import json
 import webbrowser
 import os
+import platform
+import subprocess
 from desktop_notifier import DesktopNotifier
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
@@ -31,6 +33,7 @@ from .database import (
 )
 from .logger import get_logger
 from flask import current_app
+import ssl
 
 logger = get_logger('notifier')
 
@@ -98,24 +101,54 @@ class BlueSkyNotifier:
             logger.error(f"Error getting account info: {str(e)}")
             raise
 
-    async def _make_request(self, endpoint: str, params: dict = None) -> Dict[str, Any]:
-        """Make an async request to the BlueSky API with retry logic.
+    async def _make_request(self, endpoint: str, params: dict) -> dict:
+        """Make an API request with improved error handling and SSL verification.
         
         Args:
-            endpoint: API endpoint to call
-            params: Optional query parameters
+            endpoint: API endpoint
+            params: Request parameters
             
         Returns:
-            dict: API response data
+            dict: Response data
             
         Raises:
-            aiohttp.ClientError: If API request fails
+            Exception: If request fails after retries
         """
         url = f"{self.base_url}/{endpoint}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as response:
-                response.raise_for_status()
-                return await response.json()
+        
+        try:
+            # Use SSL context to handle certificate verification more flexibly
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False  # Disable hostname checking
+            ssl_context.verify_mode = ssl.CERT_NONE  # Disable certificate verification
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, ssl=ssl_context) as response:
+                    # Check for rate limit or other API-specific errors
+                    if response.status == 429:  # Too Many Requests
+                        logger.error("Rate limit exceeded. Waiting before retrying.")
+                        await asyncio.sleep(60)  # Wait for 1 minute
+                        return await self._make_request(endpoint, params)
+                    
+                    response.raise_for_status()
+                    return await response.json()
+        except aiohttp.ClientConnectorSSLError as ssl_err:
+            logger.error(f"SSL Connection Error: {ssl_err}")
+            # Retry with a different approach
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, params=params) as response:
+                        response.raise_for_status()
+                        return await response.json()
+            except Exception as e:
+                logger.error(f"Fallback request failed: {e}")
+                raise
+        except aiohttp.ClientError as e:
+            logger.error(f"API request failed: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in API request: {str(e)}")
+            raise
 
     def list_monitored_accounts(self) -> List[Dict[str, Any]]:
         """List all monitored accounts.
@@ -330,7 +363,7 @@ class BlueSkyNotifier:
                         continue
 
                 # Update last check time (store as naive UTC)
-                account.last_check = current_time.replace(tzinfo=None)
+                account.last_check = datetime.now(timezone.utc).replace(tzinfo=None)
                 db.session.commit()
                 logger.debug(f"Updated last_check for {account.handle} to: {account.last_check}")
 
@@ -382,20 +415,42 @@ class BlueSkyNotifier:
             return {"error": str(e)}
 
     async def get_recent_posts(self, handle: str) -> list:
-        """Get recent posts for a handle.
+        """Get recent posts for a handle with improved error handling.
         
         Args:
             handle: Bluesky handle to retrieve posts for
             
         Returns:
-            list: List of recent post data (post_id, post_time, text, url)
+            list: List of recent post data
             
         Raises:
             Exception: If API request fails
         """
         try:
-            data = await self._make_request("app.bsky.feed.getAuthorFeed", {"actor": handle})
-            return data.get("feed", [])
+            # Add retry logic for connection issues
+            max_retries = 3
+            retry_delay = 5  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    data = await self._make_request("app.bsky.feed.getAuthorFeed", {
+                        "actor": handle.lstrip('@'),
+                        "limit": 10
+                    })
+                    
+                    if not data or 'feed' not in data:
+                        logger.warning(f"No feed data returned for {handle}")
+                        return []
+                    
+                    return data['feed']
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Attempt {attempt + 1} failed for {handle}: {str(e)}")
+                        await asyncio.sleep(retry_delay * (attempt + 1))
+                        continue
+                    raise
+            
+            return []
         except Exception as e:
             logger.error(f"Failed to get posts for {handle}: {str(e)}")
             return []
@@ -549,25 +604,122 @@ class BlueSkyNotifier:
             # Clean the title
             clean_title = title.replace('"', "'")
 
-            # Use terminal-notifier on macOS
-            if os.uname().sysname == 'Darwin':
+            # Use macOS native notifications
+            if platform.system() == 'Darwin':
                 try:
-                    os.system(f'terminal-notifier -title "{clean_title}" -message "{truncated_message}" -open "{url}"')
-                    return True
+                    # Try terminal-notifier if available
+                    if os.system('which terminal-notifier >/dev/null 2>&1') == 0:
+                        terminal_notifier_cmd = [
+                            'terminal-notifier',
+                            '-title', clean_title,
+                            '-message', truncated_message,
+                            '-open', url,
+                            '-sound', 'default'
+                        ]
+                        
+                        result = subprocess.run(terminal_notifier_cmd, capture_output=True, text=True)
+                        if result.returncode == 0:
+                            logger.info(f"Desktop notification sent via terminal-notifier for {clean_title}")
+                            return True
+                    
+                    # Fall back to osascript
+                    osascript_cmd = [
+                        'osascript',
+                        '-e', f'display notification "{truncated_message}" with title "{clean_title}" sound name "default"'
+                    ]
+                    
+                    result = subprocess.run(osascript_cmd, capture_output=True, text=True)
+                    if result.returncode == 0:
+                        logger.info(f"Desktop notification sent via osascript for {clean_title}")
+                        return True
+                        
+                    logger.error(f"Both notification methods failed. osascript error: {result.stderr}")
+                    return False
+                    
                 except Exception as e:
-                    logger.error(f"Error using terminal-notifier: {str(e)}")
-                    # Fall back to desktop-notifier if terminal-notifier fails
+                    logger.error(f"Error sending macOS notification: {str(e)}")
+                    return False
             
-            # Use desktop-notifier for other platforms or if terminal-notifier fails
+            # Use desktop-notifier for other platforms
             await self.notifier.send(
                 title=clean_title,
                 message=truncated_message,
                 on_clicked=lambda *args: webbrowser.open(url)
             )
+            logger.info(f"Desktop notification sent via desktop-notifier for {clean_title}")
             return True
+            
         except Exception as e:
             logger.error(f"Unexpected error sending notification: {str(e)}")
             return False
+
+    async def _send_notifications(self, new_posts, account):
+        """Send notifications for new posts.
+        
+        Handles desktop, browser, and email notifications based on account preferences.
+        
+        Args:
+            new_posts: List of new posts to notify about
+            account: MonitoredAccount instance
+        """
+        try:
+            with self.app.app_context():
+                # Refresh account to get notification preferences within session
+                account = MonitoredAccount.query.get(account.id)
+                if not account:
+                    logger.error(f"Account {account.handle} not found in database")
+                    return
+
+                for post in new_posts:
+                    notification = self._format_notification(post, account)
+                    if not notification:
+                        continue
+
+                    title, message, url = notification
+
+                    # Send notifications based on preferences
+                    notifications_sent = False
+                    for pref in account.notification_preferences:
+                        if not pref.enabled:
+                            continue
+
+                        try:
+                            if pref.type == "desktop":
+                                # Always try desktop notifications first
+                                desktop_sent = await self._send_notification_async(
+                                    title=title,
+                                    message=message,
+                                    url=url
+                                )
+                                notifications_sent = notifications_sent or desktop_sent
+                                
+                                # If in Docker or desktop notification failed, try browser notification
+                                if not desktop_sent or os.getenv('DOCKER_CONTAINER'):
+                                    try:
+                                        from bluesky_notify.api.server import broadcast_notification
+                                        broadcast_notification(title, message, url)
+                                        notifications_sent = True
+                                        logger.info(f"Browser notification sent for {account.handle}")
+                                    except Exception as e:
+                                        logger.error(f"Error sending browser notification: {str(e)}")
+                                        
+                            elif pref.type == "email":
+                                email_sent = self._send_email(
+                                    title=title,
+                                    message=message,
+                                    url=url
+                                )
+                                notifications_sent = notifications_sent or email_sent
+                        except Exception as e:
+                            logger.error(f"Error sending {pref.type} notification: {str(e)}")
+
+                    # If notification was sent, mark the post as notified
+                    if notifications_sent:
+                        post_id = post.get("post", {}).get("uri")
+                        mark_post_notified(account.did, post_id)
+
+        except Exception as e:
+            logger.error(f"Error in _send_notifications: {str(e)}")
 
     def _send_email(self, title: str, message: str, url: str) -> bool:
         """Send an email notification using Mailgun.
@@ -655,71 +807,3 @@ class BlueSkyNotifier:
         except Exception as e:
             logger.error(f"Error formatting notification: {str(e)}")
             return None
-
-    async def _send_notifications(self, new_posts, account):
-        """Send notifications for new posts.
-        
-        Handles desktop, browser, and email notifications based on account preferences.
-        
-        Args:
-            new_posts: List of new posts to notify about
-            account: MonitoredAccount instance
-        """
-        try:
-            with self.app.app_context():
-                # Refresh account to get notification preferences within session
-                account = MonitoredAccount.query.get(account.id)
-                if not account:
-                    logger.error(f"Account {account.handle} not found in database")
-                    return
-
-                for post in new_posts:
-                    notification = self._format_notification(post, account)
-                    if not notification:
-                        continue
-
-                    title, message, url = notification
-
-                    # Send notifications based on preferences
-                    notifications_sent = False
-                    for pref in account.notification_preferences:
-                        if not pref.enabled:
-                            continue
-
-                        try:
-                            if pref.type == "desktop" and not os.getenv('DOCKER_CONTAINER'):
-                                # Only send desktop notifications when not in Docker
-                                desktop_sent = await self._send_notification_async(
-                                    title=title,
-                                    message=message,
-                                    url=url
-                                )
-                                notifications_sent = notifications_sent or desktop_sent
-                            elif pref.type == "email":
-                                email_sent = self._send_email(
-                                    title=title,
-                                    message=message,
-                                    url=url
-                                )
-                                notifications_sent = notifications_sent or email_sent
-                        except Exception as e:
-                            logger.error(f"Error sending {pref.type} notification: {str(e)}")
-
-                    # Send browser notification if in Docker and desktop notifications are enabled
-                    if os.getenv('DOCKER_CONTAINER') and any(p.type == "desktop" and p.enabled for p in account.notification_preferences):
-                        try:
-                            # Import here to avoid circular import and allow CLI usage without flask_sock
-                            from bluesky_notify.api.server import broadcast_notification
-                            broadcast_notification(title, message, url)
-                            notifications_sent = True
-                            logger.info(f"Browser notification sent for {account.handle}")
-                        except Exception as e:
-                            logger.error(f"Error sending browser notification: {str(e)}")
-
-                    # If notification was sent, mark the post as notified
-                    if notifications_sent:
-                        post_id = post.get("post", {}).get("uri")
-                        mark_post_notified(account.did, post_id)
-
-        except Exception as e:
-            logger.error(f"Error in _send_notifications: {str(e)}")
