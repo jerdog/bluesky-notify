@@ -5,4 +5,4 @@ A cross-platform desktop application to monitor and track notifications
 from multiple Bluesky accounts.
 """
 
-__version__ = '0.1.0'
+__version__ = '0.4.2'

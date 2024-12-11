@@ -6,21 +6,44 @@
     <string>com.bluesky-notify</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/bluesky-notify</string>
-        <string>start</string>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>echo "Starting service at $(date)" &gt;&gt; /Users/jerdog/Library/Logs/bluesky-notify.log 2&gt;&gt; /Users/jerdog/Library/Logs/bluesky-notify.error.log; /opt/local/bin/bluesky-notify start --log-level DEBUG</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
     <key>StandardOutPath</key>
-    <string>~/Library/Logs/bluesky-notify.log</string>
+    <string>/Users/jerdog/Library/Logs/bluesky-notify.log</string>
     <key>StandardErrorPath</key>
-    <string>~/Library/Logs/bluesky-notify.error.log</string>
+    <string>/Users/jerdog/Library/Logs/bluesky-notify.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>DOCKER_CONTAINER</key>
         <string>false</string>
+        <key>PATH</key>
+        <string>/opt/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/jerdog</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PYTHONFAULTHANDLER</key>
+        <string>1</string>
+        <key>PYTHONPATH</key>
+        <string>/opt/local/lib/python3.11/site-packages</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>/Users/jerdog</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
     </dict>
 </dict>
 </plist>
