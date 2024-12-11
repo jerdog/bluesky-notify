@@ -2,7 +2,7 @@
 
 A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](https://github.com/jerdog/bluesky-notify)
+[![Version](https://img.shields.io/badge/version-0.4.2-blue.svg)](https://github.com/jerdog/bluesky-notify)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/Flask-3.1.0-blue)](https://pypi.org/project/Flask/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -222,6 +222,7 @@ If you encounter any issues or have questions, please file an issue on the GitHu
 
 ## Version History
 
+- 0.4.2: Enhance monitoring + logging
 - 0.4.1: Validate Docker container image builds correctly, make CLI co-exist
 - 0.4.0: Add web interface to daemon + terminal mode
 - 0.3.0: Add daemon mode, web interface, and improved CLI help text
