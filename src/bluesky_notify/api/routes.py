@@ -199,4 +199,4 @@ if __name__ == '__main__':
     is_docker = os.path.exists('/.dockerenv')
     default_port = 5001 if is_docker else 3001
     port = int(os.environ.get('PORT', default_port))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
