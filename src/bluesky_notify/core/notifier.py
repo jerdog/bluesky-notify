@@ -677,44 +677,50 @@ class BlueSkyNotifier:
 
                     title, message, url = notification
 
-                    # Send notifications based on preferences
-                    notifications_sent = False
+                    # Determine if we're in a Docker environment
+                    is_docker = os.path.exists('/.dockerenv')
+
+                    # Track if a notification was sent to prevent duplicates
+                    notification_sent = False
+
                     for pref in account.notification_preferences:
                         if not pref.enabled:
                             continue
 
                         try:
                             if pref.type == "desktop":
-                                # Always try desktop notifications first
-                                desktop_sent = await self._send_notification_async(
-                                    title=title,
-                                    message=message,
-                                    url=url
-                                )
-                                notifications_sent = notifications_sent or desktop_sent
-                                
-                                # If in Docker or desktop notification failed, try browser notification
-                                if not desktop_sent or os.getenv('DOCKER_CONTAINER'):
-                                    try:
-                                        from bluesky_notify.api.server import broadcast_notification
-                                        broadcast_notification(title, message, url)
-                                        notifications_sent = True
-                                        logger.info(f"Browser notification sent for {account.handle}")
-                                    except Exception as e:
-                                        logger.error(f"Error sending browser notification: {str(e)}")
-                                        
+                                # Skip desktop notifications in Docker
+                                if not is_docker:
+                                    desktop_sent = await self._send_notification_async(
+                                        title=title,
+                                        message=message,
+                                        url=url
+                                    )
+                                    notification_sent = notification_sent or desktop_sent
+                        
+                            elif pref.type == "browser":
+                                # Always try browser notification if desktop fails or in Docker
+                                try:
+                                    from bluesky_notify.api.server import broadcast_notification
+                                    broadcast_notification(title, message, url)
+                                    notification_sent = True
+                                    logger.info(f"Browser notification sent for {account.handle}")
+                                except Exception as e:
+                                    logger.error(f"Error sending browser notification: {str(e)}")
+                        
                             elif pref.type == "email":
                                 email_sent = self._send_email(
                                     title=title,
                                     message=message,
                                     url=url
                                 )
-                                notifications_sent = notifications_sent or email_sent
+                                notification_sent = notification_sent or email_sent
+
                         except Exception as e:
                             logger.error(f"Error sending {pref.type} notification: {str(e)}")
 
                     # If notification was sent, mark the post as notified
-                    if notifications_sent:
+                    if notification_sent:
                         post_id = post.get("post", {}).get("uri")
                         mark_post_notified(account.did, post_id)
 
