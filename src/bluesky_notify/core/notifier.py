@@ -22,6 +22,7 @@ import json
 import os
 import platform
 import subprocess
+import shutil
 import tempfile
 import webbrowser
 from desktop_notifier import DesktopNotifier
@@ -72,24 +73,31 @@ class BlueSkyNotifier:
             truncated_message = self._truncate_message(message)
 
             if platform.system() == 'Darwin':
-                # Check if terminal-notifier is installed
-                terminal_notifier_path = '/opt/homebrew/bin/terminal-notifier'
-                if not os.path.exists(terminal_notifier_path):
-                    logger.error("terminal-notifier not found. Installing...")
-                    try:
-                        subprocess.run(['brew', 'install', 'terminal-notifier'], check=True)
-                    except subprocess.CalledProcessError as e:
-                        logger.error(f"Failed to install terminal-notifier: {e}")
-                        return False
+                # Check both Homebrew paths
+                possible_paths = [
+                    '/opt/homebrew/bin/terminal-notifier',
+                    '/usr/local/bin/terminal-notifier',
+                    shutil.which('terminal-notifier')
+                ]
 
-                result = subprocess.run([
+                terminal_notifier_path = next((path for path in possible_paths if path and os.path.exists(path)), None)
+
+                if not terminal_notifier_path:
+                    logger.error("terminal-notifier not found. Please install with: brew install terminal-notifier")
+                    return False
+
+                cmd = [
                     terminal_notifier_path,
                     '-title', clean_title,
                     '-subtitle', "Click to open in browser",
                     '-message', truncated_message,
-                    '-open', url,
-                    '-sound', 'default'
-                ], capture_output=True, text=True)
+                    '-open', url
+                ]
+
+                if self._notification_sound:
+                    cmd.extend(['-sound', 'default'])
+
+                result = subprocess.run(cmd, capture_output=True, text=True)
 
                 if result.returncode == 0:
                     logger.info(f"Notification sent with URL: {url}")
