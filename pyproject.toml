@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bluesky-notify"
-version = "0.4.2"
+version = "0.4.4"
 authors = [
     { name = "Jeremy Meiss", email = "jeremy.meiss@gmail.com" },
 ]
@@ -61,3 +61,7 @@ bluesky-notify = "bluesky_notify.cli.commands:main"
 
 [tool.setuptools.package-data]
 "*" = ["services/**/*"]
+
+[tool.poetry.dependencies]
+# ...existing dependencies...
+terminal-notifier = {version = "^2.0.0", platform = "darwin"}
