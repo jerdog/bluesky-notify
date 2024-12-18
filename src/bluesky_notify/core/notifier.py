@@ -19,11 +19,13 @@ import aiohttp
 import requests
 import backoff
 import json
-import webbrowser
 import os
 import platform
 import subprocess
+import tempfile
+import webbrowser
 from desktop_notifier import DesktopNotifier
+import ssl
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from .database import (
@@ -33,26 +35,97 @@ from .database import (
 )
 from .logger import get_logger
 from flask import current_app
-import ssl
+from .settings import Settings
 
 logger = get_logger('notifier')
 
 class BlueSkyNotifier:
     """Main notification manager for Bluesky posts."""
-    
+
     def __init__(self, app=None):
-        """Initialize the BlueSkyNotifier."""
+        """Initialize the BlueSkyNotifier.
+
+        Args:
+            app: Optional Flask application instance
+        """
+        # Flask app instance
         self.app = app
+
+        # API settings
         self.base_url = "https://api.bsky.app/xrpc"
         self.check_interval = 60  # seconds
+
+        # Runtime state
         self._running = False
-        self.notifier = DesktopNotifier()
         self.loop = None
         self._session = None
-    
+        self._last_notification_url = None
+
+        # Notification settings
+        self._notification_enabled = True
+        self._notification_sound = True
+
+    async def _send_notification_async(self, title: str, message: str, url: str) -> bool:
+        """Send a notification with clickable URL."""
+        try:
+            clean_title = self._clean_text(title)
+            truncated_message = self._truncate_message(message)
+
+            if platform.system() == 'Darwin':
+                # Check if terminal-notifier is installed
+                terminal_notifier_path = '/opt/homebrew/bin/terminal-notifier'
+                if not os.path.exists(terminal_notifier_path):
+                    logger.error("terminal-notifier not found. Installing...")
+                    try:
+                        subprocess.run(['brew', 'install', 'terminal-notifier'], check=True)
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"Failed to install terminal-notifier: {e}")
+                        return False
+
+                result = subprocess.run([
+                    terminal_notifier_path,
+                    '-title', clean_title,
+                    '-subtitle', "Click to open in browser",
+                    '-message', truncated_message,
+                    '-open', url,
+                    '-sound', 'default'
+                ], capture_output=True, text=True)
+
+                if result.returncode == 0:
+                    logger.info(f"Notification sent with URL: {url}")
+                    self._last_notification_url = url
+                    return True
+                else:
+                    logger.error(f"terminal-notifier error: {result.stderr}")
+                    return False
+
+            else:
+                # ...existing code...
+                pass
+
+        except Exception as e:
+            logger.error(f"Error sending notification: {str(e)}")
+            return False
+
+    def _clean_text(self, text: str) -> str:
+        """Clean text for notification display."""
+        if not text:
+            return ""
+        # Replace quotes and escape special characters
+        return text.replace('"', '\\"').replace("'", "\\'").strip()
+
+    def _truncate_message(self, message: str, max_length: int = 200) -> str:
+        """Truncate message to suitable length for notifications."""
+        if not message:
+            return ""
+        cleaned = self._clean_text(message)
+        if len(cleaned) <= max_length:
+            return cleaned
+        return f"{cleaned[:max_length-3]}..."
+
     def authenticate(self) -> bool:
         """Authenticate with the Bluesky API.
-        
+
         Returns:
             bool: True if authentication successful, False otherwise
         """
@@ -65,31 +138,31 @@ class BlueSkyNotifier:
         except Exception as e:
             logger.error(f"Authentication failed: {str(e)}")
             return False
-    
+
     def get_account_info(self, handle: str) -> Dict[str, Any]:
         """Get account information from Bluesky.
-        
+
         Args:
             handle: Account handle (e.g., @user.bsky.social)
-            
+
         Returns:
             dict: Account information including DID, handle, and profile
-            
+
         Raises:
             Exception: If API request fails
         """
         try:
             # Remove @ if present and convert to lowercase for API request
             api_handle = handle.lstrip('@').lower()
-            
+
             # Get profile information
             response = requests.get(f"{self.base_url}/app.bsky.actor.getProfile", params={"actor": api_handle})
             response.raise_for_status()
             data = response.json()
-            
+
             if not data:
                 raise Exception(f"Could not find account: {handle}")
-            
+
             return {
                 'did': data.get('did'),
                 'handle': data.get('handle'),
@@ -103,25 +176,25 @@ class BlueSkyNotifier:
 
     async def _make_request(self, endpoint: str, params: dict) -> dict:
         """Make an API request with improved error handling and SSL verification.
-        
+
         Args:
             endpoint: API endpoint
             params: Request parameters
-            
+
         Returns:
             dict: Response data
-            
+
         Raises:
             Exception: If request fails after retries
         """
         url = f"{self.base_url}/{endpoint}"
-        
+
         try:
             # Use SSL context to handle certificate verification more flexibly
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False  # Disable hostname checking
             ssl_context.verify_mode = ssl.CERT_NONE  # Disable certificate verification
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params, ssl=ssl_context) as response:
                     # Check for rate limit or other API-specific errors
@@ -129,7 +202,7 @@ class BlueSkyNotifier:
                         logger.error("Rate limit exceeded. Waiting before retrying.")
                         await asyncio.sleep(60)  # Wait for 1 minute
                         return await self._make_request(endpoint, params)
-                    
+
                     response.raise_for_status()
                     return await response.json()
         except aiohttp.ClientConnectorSSLError as ssl_err:
@@ -152,7 +225,7 @@ class BlueSkyNotifier:
 
     def list_monitored_accounts(self) -> List[Dict[str, Any]]:
         """List all monitored accounts.
-        
+
         Returns:
             list: List of monitored accounts with their status
         """
@@ -166,11 +239,11 @@ class BlueSkyNotifier:
                     'desktop_notifications': prefs.desktop if prefs else False,
                     'email_notifications': prefs.email if prefs else False
                 })
-            
+
             if not accounts:
                 logger.info("No accounts are currently being monitored")
                 return []
-            
+
             # Print account information
             for account in accounts:
                 status = []
@@ -178,12 +251,12 @@ class BlueSkyNotifier:
                     status.append("Desktop")
                 if account['email_notifications']:
                     status.append("Email")
-                
+
                 logger.info(
                     f"{account['display_name'] or account['handle']} "
                     f"(@{account['handle']}) - Notifications: {', '.join(status) or 'None'}"
                 )
-            
+
             return accounts
         except Exception as e:
             logger.error(f"Error listing accounts: {str(e)}")
@@ -191,10 +264,10 @@ class BlueSkyNotifier:
 
     def toggle_account_status(self, handle: str) -> bool:
         """Toggle monitoring status for an account.
-        
+
         Args:
             handle: Account handle to toggle
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -203,10 +276,10 @@ class BlueSkyNotifier:
             if not account:
                 logger.error(f"Account not found: {handle}")
                 return False
-            
+
             account.active = not account.active
             db.session.commit()
-            
+
             status = "enabled" if account.active else "disabled"
             logger.info(f"Monitoring {status} for {handle}")
             return True
@@ -216,12 +289,12 @@ class BlueSkyNotifier:
 
     def update_notification_preferences(self, handle: str, desktop: Optional[bool], email: Optional[bool]) -> bool:
         """Update notification preferences for an account.
-        
+
         Args:
             handle: Account handle to update
             desktop: Enable/disable desktop notifications
             email: Enable/disable email notifications
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -230,17 +303,17 @@ class BlueSkyNotifier:
             if not account:
                 logger.error(f"Account not found: {handle}")
                 return False
-            
+
             prefs = account.notification_preferences
             if not prefs:
                 prefs = NotificationPreference(account_id=account.id)
                 db.session.add(prefs)
-            
+
             if desktop is not None:
                 prefs.desktop = desktop
             if email is not None:
                 prefs.email = email
-            
+
             db.session.commit()
             logger.info(f"Updated preferences for {handle}")
             return True
@@ -250,10 +323,10 @@ class BlueSkyNotifier:
 
     def remove_monitored_account(self, handle: str) -> bool:
         """Remove an account from monitoring.
-        
+
         Args:
             handle: Account handle to remove
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -270,33 +343,45 @@ class BlueSkyNotifier:
 
     async def _fetch_account_info(self, identifier):
         """Fetch account information from Bluesky API.
-        
+
         Args:
             identifier: Account handle or DID
-            
+
         Returns:
             dict: Account information including DID, handle, and profile
-            
+
         Raises:
             aiohttp.ClientError: If API request fails
         """
-        url = f"{self.base_url}/app.bsky.actor.getProfile"
-        params = {"actor": identifier}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    response.raise_for_status()
-                    return await response.json()
-        except aiohttp.ClientError as e:
-            logger.error(f"API request failed: {str(e)}")
+            # Remove @ if present and convert to lowercase for API request
+            api_handle = identifier.lstrip('@').lower()
+
+            # Get profile information
+            response = requests.get(f"{self.base_url}/app.bsky.actor.getProfile", params={"actor": api_handle})
+            response.raise_for_status()
+            data = response.json()
+
+            if not data:
+                raise Exception(f"Could not find account: {identifier}")
+
+            return {
+                'did': data.get('did'),
+                'handle': data.get('handle'),
+                'display_name': data.get('displayName'),
+                'avatar_url': data.get('avatar'),
+                'description': data.get('description', '')
+            }
+        except Exception as e:
+            logger.error(f"Error getting account info: {str(e)}")
             raise
 
     async def _check_new_posts(self, account):
         """Check for new posts from a monitored account.
-        
+
         Args:
             account: MonitoredAccount instance to check
-            
+
         Returns:
             list: New posts that haven't been notified about
         """
@@ -334,7 +419,7 @@ class BlueSkyNotifier:
                             account_did=account.did,
                             post_id=post_id
                         ).first()
-                        
+
                         if existing_notification:
                             continue
 
@@ -376,7 +461,7 @@ class BlueSkyNotifier:
 
     def list_accounts(self):
         """List all monitored accounts.
-        
+
         Returns:
             list: List of monitored account data (did, handle, display_name, avatar_url)
         """
@@ -391,13 +476,13 @@ class BlueSkyNotifier:
 
     async def get_profile(self, handle: str) -> dict:
         """Get profile information for a handle.
-        
+
         Args:
             handle: Bluesky handle to retrieve profile for
-            
+
         Returns:
             dict: Profile data (did, handle, display_name, avatar_url, description)
-            
+
         Raises:
             Exception: If API request fails
         """
@@ -416,13 +501,13 @@ class BlueSkyNotifier:
 
     async def get_recent_posts(self, handle: str) -> list:
         """Get recent posts for a handle with improved error handling.
-        
+
         Args:
             handle: Bluesky handle to retrieve posts for
-            
+
         Returns:
             list: List of recent post data
-            
+
         Raises:
             Exception: If API request fails
         """
@@ -430,18 +515,18 @@ class BlueSkyNotifier:
             # Add retry logic for connection issues
             max_retries = 3
             retry_delay = 5  # seconds
-            
+
             for attempt in range(max_retries):
                 try:
                     data = await self._make_request("app.bsky.feed.getAuthorFeed", {
                         "actor": handle.lstrip('@'),
                         "limit": 10
                     })
-                    
+
                     if not data or 'feed' not in data:
                         logger.warning(f"No feed data returned for {handle}")
                         return []
-                    
+
                     return data['feed']
                 except Exception as e:
                     if attempt < max_retries - 1:
@@ -449,7 +534,7 @@ class BlueSkyNotifier:
                         await asyncio.sleep(retry_delay * (attempt + 1))
                         continue
                     raise
-            
+
             return []
         except Exception as e:
             logger.error(f"Failed to get posts for {handle}: {str(e)}")
@@ -457,14 +542,14 @@ class BlueSkyNotifier:
 
     async def add_account(self, handle: str, notification_preferences: dict = None) -> dict:
         """Add a new account to monitor.
-        
+
         Args:
             handle: Bluesky handle to add
             notification_preferences: Optional notification preferences (desktop, email)
-            
+
         Returns:
             dict: Result data (success, error)
-            
+
         Raises:
             Exception: If API request fails
         """
@@ -499,20 +584,20 @@ class BlueSkyNotifier:
 
     def remove_account(self, identifier, by_did=False):
         """Remove a monitored account.
-        
+
         Args:
             identifier: Either the handle or DID of the account to remove
             by_did: If True, identifier is treated as a DID. If False, as a handle.
-            
+
         Returns:
             dict: Result data (success, error)
-            
+
         Raises:
             Exception: If database operation fails
         """
         try:
             logger.info(f"Notifier removing account with {'DID' if by_did else 'handle'}: {identifier}")
-            
+
             with self.app.app_context():
                 result = remove_monitored_account(identifier, by_did)
                 logger.info(f"Database removal result: {result}")
@@ -525,14 +610,14 @@ class BlueSkyNotifier:
 
     def update_preferences(self, handle: str, preferences: dict) -> dict:
         """Update notification preferences for an account.
-        
+
         Args:
             handle: Bluesky handle to update preferences for
             preferences: Notification preferences (desktop, email)
-            
+
         Returns:
             dict: Result data (success, error)
-            
+
         Raises:
             Exception: If database operation fails
         """
@@ -540,13 +625,13 @@ class BlueSkyNotifier:
             with self.app.app_context():
                 # Update preferences in database
                 result = update_notification_preferences(handle, preferences)
-                
+
                 # Log the result
                 if "error" in result:
                     logger.error(f"Error updating preferences for {handle}: {result['error']}")
                 else:
                     logger.info(f"Successfully updated preferences for {handle}")
-                    
+
                 return result
 
         except Exception as e:
@@ -556,108 +641,107 @@ class BlueSkyNotifier:
 
     async def run(self) -> None:
         """Run the notification service.
-        
+
         Continuously checks for new posts from monitored accounts and sends notifications.
         """
         self._running = True
         self.loop = asyncio.get_event_loop()
+
+        # Retrieve check interval from settings
+        settings = Settings()
+        current_settings = settings.get_settings()
+        self.check_interval = current_settings.get('check_interval', 60)
+
+        logger.info(f"Starting notification service with check interval: {self.check_interval} seconds")
+
+        # Retrieve server port from settings
+        server_port = current_settings.get('port', 3000)
+        server_url = f'http://localhost:{server_port}'
+
+        # Send startup notification
+        try:
+            # Send desktop notification
+            await self._send_notification_async(
+                title="Bluesky Notify Daemon Started",
+                message="Notification service is now running and monitoring accounts.",
+                url=server_url
+            )
+
+            # Send browser notification
+            from bluesky_notify.api.server import broadcast_notification
+            broadcast_notification(
+                "Bluesky Notify Daemon Started",
+                "Notification service is now running and monitoring accounts.",
+                server_url
+            )
+            logger.info(f"Startup notifications sent successfully. Web interface available at {server_url}")
+        except Exception as e:
+            logger.error(f"Error sending startup notifications: {str(e)}")
+
         while self._running:
             try:
+                start_time = datetime.now()
+                logger.debug(f"Starting check cycle at {start_time}")
+
                 with self.app.app_context():
                     accounts = MonitoredAccount.query.filter_by(is_active=True).all()
+                    logger.debug(f"Checking {len(accounts)} active accounts")
+
                     for account in accounts:
                         new_posts = await self._check_new_posts(account)
                         await self._send_notifications(new_posts, account)
+
                         # Update last_check time (store as naive UTC)
                         account.last_check = datetime.now(timezone.utc).replace(tzinfo=None)
                         db.session.commit()
+
+                end_time = datetime.now()
+                cycle_duration = (end_time - start_time).total_seconds()
+                logger.debug(f"Check cycle completed in {cycle_duration:.2f} seconds")
+
+                # Calculate remaining sleep time
+                sleep_time = max(0, self.check_interval - cycle_duration)
+                logger.debug(f"Sleeping for {sleep_time} seconds")
+
+                await asyncio.sleep(sleep_time)
+
             except Exception as e:
                 logger.error(f"Error in notification service: {str(e)}")
-
-            await asyncio.sleep(self.check_interval)
+                # Add a longer sleep to prevent rapid error loops
+                await asyncio.sleep(self.check_interval)
 
     def stop(self) -> None:
         """Stop the notification service."""
         self._running = False
 
-    async def _send_notification_async(self, title: str, message: str, url: str) -> bool:
-        """Send a desktop notification using desktop-notifier asynchronously.
-        
-        Args:
-            title: The notification title
-            message: The notification message
-            url: The URL to open when clicked
-            
-        Returns:
-            bool: True if notification was sent successfully, False otherwise
-        """
+    def open_notification_url(self):
+        """Open the last notification URL manually."""
+        if not hasattr(self, '_last_notification_url') or not self._last_notification_url:
+            logger.warning("No notification URL available to open")
+            return False
+
         try:
-            # Skip desktop notifications in Docker
-            if os.getenv('DOCKER_CONTAINER'):
-                logger.info("Skipping desktop notification in Docker environment")
-                return True
+            url = self._last_notification_url
 
-            # Clean and truncate the message
-            clean_message = message.replace('"', "'")
-            truncated_message = clean_message[:140] + "..." if len(clean_message) > 140 else clean_message
-            
-            # Clean the title
-            clean_title = title.replace('"', "'")
+            # macOS-specific URL opening
+            applescript = f'''
+tell application "System Events"
+    open location "{url}"
+end tell
+'''
+            subprocess.run(['osascript', '-e', applescript], check=True)
 
-            # Use macOS native notifications
-            if platform.system() == 'Darwin':
-                try:
-                    # Try terminal-notifier if available
-                    if os.system('which terminal-notifier >/dev/null 2>&1') == 0:
-                        terminal_notifier_cmd = [
-                            'terminal-notifier',
-                            '-title', clean_title,
-                            '-message', truncated_message,
-                            '-open', url,
-                            '-sound', 'default'
-                        ]
-                        
-                        result = subprocess.run(terminal_notifier_cmd, capture_output=True, text=True)
-                        if result.returncode == 0:
-                            logger.info(f"Desktop notification sent via terminal-notifier for {clean_title}")
-                            return True
-                    
-                    # Fall back to osascript
-                    osascript_cmd = [
-                        'osascript',
-                        '-e', f'display notification "{truncated_message}" with title "{clean_title}" sound name "default"'
-                    ]
-                    
-                    result = subprocess.run(osascript_cmd, capture_output=True, text=True)
-                    if result.returncode == 0:
-                        logger.info(f"Desktop notification sent via osascript for {clean_title}")
-                        return True
-                        
-                    logger.error(f"Both notification methods failed. osascript error: {result.stderr}")
-                    return False
-                    
-                except Exception as e:
-                    logger.error(f"Error sending macOS notification: {str(e)}")
-                    return False
-            
-            # Use desktop-notifier for other platforms
-            await self.notifier.send(
-                title=clean_title,
-                message=truncated_message,
-                on_clicked=lambda *args: webbrowser.open(url)
-            )
-            logger.info(f"Desktop notification sent via desktop-notifier for {clean_title}")
+            logger.info(f"Opened notification URL: {url}")
             return True
-            
         except Exception as e:
-            logger.error(f"Unexpected error sending notification: {str(e)}")
+            logger.error(f"Error opening notification URL: {str(e)}")
             return False
 
     async def _send_notifications(self, new_posts, account):
         """Send notifications for new posts.
-        
+
         Handles desktop, browser, and email notifications based on account preferences.
-        
+
         Args:
             new_posts: List of new posts to notify about
             account: MonitoredAccount instance
@@ -678,7 +762,7 @@ class BlueSkyNotifier:
                     title, message, url = notification
 
                     # Determine if we're in a Docker environment
-                    is_docker = os.path.exists('/.dockerenv')
+                    is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
 
                     # Track if a notification was sent to prevent duplicates
                     notification_sent = False
@@ -697,7 +781,7 @@ class BlueSkyNotifier:
                                         url=url
                                     )
                                     notification_sent = notification_sent or desktop_sent
-                        
+
                             elif pref.type == "browser":
                                 # Always try browser notification if desktop fails or in Docker
                                 try:
@@ -707,7 +791,7 @@ class BlueSkyNotifier:
                                     logger.info(f"Browser notification sent for {account.handle}")
                                 except Exception as e:
                                     logger.error(f"Error sending browser notification: {str(e)}")
-                        
+
                             elif pref.type == "email":
                                 email_sent = self._send_email(
                                     title=title,
@@ -729,12 +813,12 @@ class BlueSkyNotifier:
 
     def _send_email(self, title: str, message: str, url: str) -> bool:
         """Send an email notification using Mailgun.
-        
+
         Args:
             title: The email subject
             message: The email body
             url: The URL to the post
-            
+
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
@@ -783,11 +867,11 @@ class BlueSkyNotifier:
 
     def _format_notification(self, post, account):
         """Format post information for notification.
-        
+
         Args:
             post: Post data from Bluesky API
             account: MonitoredAccount instance
-            
+
         Returns:
             tuple: (title, message, url) for notification
         """
@@ -795,17 +879,17 @@ class BlueSkyNotifier:
             # Get post details
             text = post.get("post", {}).get("record", {}).get("text", "")
             post_uri = post.get("post", {}).get("uri", "")
-            
+
             # Convert URI to web URL
             if post_uri:
                 try:
                     _, _, _, _, post_rkey = post_uri.split("/")
                     web_url = f"https://bsky.app/profile/{account.handle}/post/{post_rkey}"
-                    
+
                     # Format notification title and message
                     title = f"New post from {account.display_name or account.handle}"
                     message = text[:200] + ("..." if len(text) > 200 else "")
-                    
+
                     return title, message, web_url
                 except ValueError:
                     logger.error(f"Invalid post URI format: {post_uri}")
