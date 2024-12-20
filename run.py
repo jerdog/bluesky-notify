@@ -34,11 +34,11 @@ def start_notifier_thread(flask_app):
     """Start the notification service in a new event loop."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     # Create app context
     with flask_app.app_context():
         loop.run_until_complete(run_notifier(flask_app))
-    
+
     loop.close()
 
 if __name__ == "__main__":
@@ -48,20 +48,18 @@ if __name__ == "__main__":
         settings = Settings()
         current_settings = settings.get_settings()
         port = current_settings.get('port', 5001)
-        
+
         logger.info("Starting Bluesky Notification Tracker...")
-        is_container = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
-        
+
         # Start the notification service in a separate thread
         notifier_thread = threading.Thread(target=start_notifier_thread, args=(app,), daemon=True)
         notifier_thread.start()
         logger.info("Notification service started in background")
-        
+
         # Start the web server
         run_server(
-            host="0.0.0.0" if is_container else "127.0.0.1",
-            port=port,
-            debug=not is_container  # Disable debug mode in container
+            host="127.0.0.1",
+            port=port
         )
     except Exception as e:
         logger.error(f"Application failed to start: {e}")

@@ -151,36 +151,6 @@ def broadcast_notification(title, message, url):
     if not has_websocket:
         return
 
-    notification = {
-        'type': 'notification',
-        'title': title,
-        'message': message,
-        'url': url
-    }
-    with ws_lock:
-        disconnected = set()
-        for client in ws_clients:
-            try:
-                client.send(json.dumps(notification))
-            except Exception:
-                disconnected.add(client)
-        # Clean up disconnected clients
-        for client in disconnected:
-            ws_clients.remove(client)
-
-if has_websocket:
-    @sock.route('/ws')
-    def ws_handler(ws):
-        """Handle WebSocket connections for real-time notifications."""
-        with ws_lock:
-            ws_clients.add(ws)
-        try:
-            while True:
-                # Keep connection alive and handle disconnection
-                ws.receive()
-        except Exception:
-            with ws_lock:
-                ws_clients.remove(ws)
 
 @app.route('/shutdown', methods=['GET'])
 def shutdown():

@@ -67,12 +67,6 @@ dist/
 build/
 *.egg-info/
 
-# Docker
-.docker/
-docker-compose.override.yml
-*.env
-!example.env
-
 # Testing
 .coverage
 htmlcov/
