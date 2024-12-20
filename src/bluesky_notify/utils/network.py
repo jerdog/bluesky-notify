@@ -7,37 +7,19 @@ import subprocess
 
 def is_port_in_use(port: int) -> bool:
     """Check if a port is in use.
-    
+
     Args:
         port: Port number to check
-        
+
     Returns:
         bool: True if port is in use, False otherwise
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('127.0.0.1', port)) == 0
 
-def get_process_using_port(port: int) -> str:
-    """Get the name of the process using a port.
-    
-    Args:
-        port: Port number to check
-        
-    Returns:
-        str: Name of the process using the port, or None if not found
-    """
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        try:
-            for conn in proc.connections():
-                if conn.laddr.port == port:
-                    return proc.name()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-    return None
-
 def check_service_status() -> dict:
     """Check if the bluesky-notify service is running.
-    
+
     Returns:
         dict: Service status information
     """
@@ -48,7 +30,7 @@ def check_service_status() -> dict:
         'pid': None,
         'pids': []  # List of all related process IDs
     }
-    
+
     # First check for daemon mode
     if system == 'Darwin':  # macOS
         try:
@@ -75,7 +57,7 @@ def check_service_status() -> dict:
                     pass
         except Exception:
             pass
-            
+
     elif system == 'Linux':
         try:
             result = subprocess.run(
@@ -101,7 +83,7 @@ def check_service_status() -> dict:
                     pass
         except Exception:
             pass
-    
+
     # If not running in daemon mode, check for terminal mode
     if not status['running']:
         pids = []
@@ -117,5 +99,5 @@ def check_service_status() -> dict:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
         status['pids'] = pids
-            
+
     return status

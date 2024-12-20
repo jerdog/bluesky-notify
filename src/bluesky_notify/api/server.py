@@ -24,7 +24,7 @@ if os.getenv('DOCKER_CONTAINER'):
 else:
     has_websocket = False
 
-app = Flask(__name__, 
+app = Flask(__name__,
            template_folder='../templates',
            static_folder='../static')
 CORS(app)
@@ -89,7 +89,7 @@ def get_accounts():
         'display_name': account.display_name,
         'is_active': account.is_active,
         'notification_preferences': {
-            pref.type: pref.enabled 
+            pref.type: pref.enabled
             for pref in account.notification_preferences
         }
     } for account in accounts])
@@ -100,24 +100,23 @@ def add_account():
     data = request.get_json()
     handle = data.get('handle')
     desktop = data.get('desktop', True)
-    email = data.get('email', False)
-    
+
     notifier = BlueSkyNotifier(app=app)
     if not notifier.authenticate():
         return jsonify({'error': 'Failed to authenticate with Bluesky'}), 401
-    
+
     try:
         account_info = notifier.get_account_info(handle)
-        notification_preferences = {'desktop': desktop, 'email': email}
+        notification_preferences = {'desktop': desktop}
         result = add_monitored_account(
             profile_data=account_info,
             notification_preferences=notification_preferences
         )
-        
+
         if 'error' in result:
             return jsonify(result), 400
         return jsonify({'message': f'Successfully added {account_info["display_name"] or handle}'}), 201
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -142,9 +141,7 @@ def update_preferences(handle):
     prefs = {}
     if 'desktop' in data:
         prefs['desktop'] = data['desktop']
-    if 'email' in data:
-        prefs['email'] = data['email']
-        
+
     if update_notification_preferences(handle, prefs):
         return jsonify({'message': f'Successfully updated preferences for {handle}'})
     return jsonify({'error': f'Failed to update preferences for {handle}'}), 400
@@ -153,7 +150,7 @@ def broadcast_notification(title, message, url):
     """Broadcast a notification to all connected WebSocket clients."""
     if not has_websocket:
         return
-        
+
     notification = {
         'type': 'notification',
         'title': title,
@@ -219,15 +216,15 @@ def run_server(host='127.0.0.1', port=3000, debug=False):
         for env_var in ['WERKZEUG_SERVER_FD', 'WERKZEUG_RUN_MAIN']:
             if env_var in os.environ:
                 del os.environ[env_var]
-        
+
         # Make sure no existing server is running
         if server:
             shutdown_server()
-        
+
         # Use Flask's built-in server with debug output
         logger.info(f"Starting web server on http://{host}:{port}")
         app.logger.setLevel(logging.DEBUG if debug else logging.INFO)
-        
+
         # Test routes are accessible
         logger.debug("Testing routes...")
         test_routes = [
@@ -239,7 +236,7 @@ def run_server(host='127.0.0.1', port=3000, debug=False):
             logger.debug(f"Testing route: {route} -> {endpoint}")
             if endpoint not in app.view_functions:
                 logger.error(f"Route {route} -> {endpoint} not found!")
-        
+
         # Set up routes before running
         logger.debug("Setting up routes...")
         app.add_url_rule('/', 'index', index)
@@ -248,12 +245,12 @@ def run_server(host='127.0.0.1', port=3000, debug=False):
         app.add_url_rule('/api/accounts/<handle>', 'remove_account', remove_account, methods=['DELETE'])
         app.add_url_rule('/api/accounts/<handle>/toggle', 'toggle_account', toggle_account, methods=['POST'])
         app.add_url_rule('/api/accounts/<handle>/preferences', 'update_preferences', update_preferences, methods=['PATCH'])
-        
+
         # Run the server
         logger.debug("Starting Flask server...")
         import werkzeug
         werkzeug.serving.is_running_from_reloader = lambda: False
-        
+
         # Create server instance
         try:
             srv = werkzeug.serving.make_server(
@@ -267,17 +264,17 @@ def run_server(host='127.0.0.1', port=3000, debug=False):
         except Exception as e:
             logger.error(f"Failed to create server: {e}")
             raise
-        
+
         # Store server instance
         server = srv
-        
+
         # Start serving
         try:
             srv.serve_forever()
         except Exception as e:
             logger.error(f"Server failed while running: {e}")
             raise
-        
+
     except Exception as e:
         logger.error(f"Error starting web server: {e}")
         import traceback

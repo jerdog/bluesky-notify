@@ -85,7 +85,7 @@ def add_account():
 
         handle = data['handle']
         preferences = data.get('notification_preferences')
-        
+
         with app.app_context():
             # Run add_account in event loop
             loop = asyncio.new_event_loop()
@@ -127,18 +127,18 @@ def remove_account_by_did(did):
             else:
                 logger.warning(f"No account found with DID: {did}")
                 return jsonify({"error": f"Account with DID {did} not found"}), 404
-            
+
             # Try to remove the account
             result = notifier.remove_account(did, by_did=True)
             logger.info(f"Account removal result: {result}")
-            
+
             if "error" in result:
                 logger.warning(f"Error removing account: {result['error']}")
                 return jsonify({"error": result["error"]}), 400
-                
+
             logger.info("Account removed successfully")
             return jsonify({"data": result}), 200
-            
+
     except Exception as e:
         error_msg = f"Error removing account by DID: {str(e)}"
         logger.error(error_msg)

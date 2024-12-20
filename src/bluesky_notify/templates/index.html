@@ -15,7 +15,7 @@
             <img src="{{ url_for('static', filename='logo.png') }}" alt="Bluesky Notification Manager Logo" class="img-fluid mb-3" style="max-height: 100px;">
             <h1 class="text-center mb-4">Bluesky Notification Manager</h1>
         </div>
-        
+
         <!-- Account Management Section -->
         <div id="account-section">
             <div class="card">
@@ -26,10 +26,10 @@
                     <form id="addAccountForm" class="mb-4">
                         <div class="mb-3">
                             <div class="input-group">
-                                <input type="text" 
-                                       id="handle" 
-                                       class="form-control" 
-                                       placeholder="Enter Bluesky handle (e.g., user.bsky.social)" 
+                                <input type="text"
+                                       id="handle"
+                                       class="form-control"
+                                       placeholder="Enter Bluesky handle (e.g., user.bsky.social)"
                                        pattern="[a-zA-Z0-9][a-zA-Z0-9\.-]*[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])*"
                                        title="Enter a valid Bluesky handle (e.g., user.bsky.social)"
                                        required>
@@ -46,15 +46,9 @@
                                     <i class="bi bi-laptop"></i> Desktop Notifications
                                 </label>
                             </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" id="emailNotif">
-                                <label class="form-check-label" for="emailNotif">
-                                    <i class="bi bi-envelope"></i> Email Notifications
-                                </label>
-                            </div>
                         </div>
                     </form>
-                    
+
                     <div class="table-responsive">
                         <table class="table align-middle">
                             <thead>
@@ -62,7 +56,6 @@
                                     <th>Account</th>
                                     <th>Status</th>
                                     <th>Desktop Notifications</th>
-                                    <th>Email Notifications</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
