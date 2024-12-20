@@ -2,7 +2,7 @@
 
 A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
 
-[![Version](https://img.shields.io/badge/version-0.4.2-blue.svg)](https://github.com/jerdog/bluesky-notify)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/jerdog/bluesky-notify)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/Flask-3.1.0-blue)](https://pypi.org/project/Flask/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -12,17 +12,14 @@ https://pypi.org/project/bluesky-notify/
 ## Features
 
 - Monitor multiple Bluesky accounts for new posts
-- Real-time browser notifications in Docker environment
 - Desktop notifications support across platforms (macOS, Linux, Windows)
 - Daemon mode for continuous monitoring
 - Web interface for easy account management
-- Email notifications support (requires Mailgun configuration)
 - XDG-compliant configuration storage
 - SQLite database for reliable post tracking
 - Cross-platform compatibility
 - Consistent CLI interface with clear version and configuration information
 - Comprehensive logging system with rotation and separate error logs
-- WebSocket support for real-time updates in Docker environment
 
 ## Installation
 
@@ -41,7 +38,7 @@ bluesky-notify --version
 
 Example output:
 ```
-Bluesky Notify v0.4.1
+Bluesky Notify v0.5.1
 Config: /Users/username/.local/share/bluesky-notify
 
 A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
@@ -73,7 +70,7 @@ The application uses the XDG Base Directory Specification for storing its data:
 - Configuration: `~/.config/bluesky-notify/`
 - Data: `~/.local/share/bluesky-notify/`
 - Cache: `~/.cache/bluesky-notify/`
-- Logs: 
+- Logs:
   - macOS: `~/Library/Logs/bluesky-notify/`
   - Linux: `~/.local/share/bluesky-notify/logs/`
 
@@ -83,17 +80,6 @@ The web interface runs on port 3000 by default. On macOS, port 5000 is avoided a
 
 ```bash
 bluesky-notify settings --port NUMBER
-```
-
-### Email Notifications (Optional)
-
-To enable email notifications, set the following environment variables:
-
-```bash
-export MAILGUN_API_KEY='your-api-key'
-export MAILGUN_DOMAIN='your-domain'
-export MAILGUN_FROM_EMAIL='notifications@yourdomain.com'
-export MAILGUN_TO_EMAIL='your-email@example.com'
 ```
 
 ## Usage
@@ -127,7 +113,6 @@ Note: The handle should be provided without the '@' symbol.
 
 Options:
 - `--desktop/--no-desktop`: Enable/disable desktop notifications (default: enabled)
-- `--email/--no-email`: Enable/disable email notifications (default: disabled)
 
 ### Listing Monitored Accounts
 
@@ -149,17 +134,8 @@ bluesky-notify remove username.bsky.social
 
 Update notification preferences:
 ```bash
-bluesky-notify update username.bsky.social --desktop/--no-desktop --email/--no-email
+bluesky-notify update username.bsky.social --desktop/--no-desktop
 ```
-
-## Docker Support
-
-When running in Docker, the application supports browser notifications through WebSocket connections. The web interface will automatically detect the Docker environment and enable real-time notifications.
-
-### Environment Variables
-
-- `DOCKER_CONTAINER`: Set to 'true' to enable Docker-specific features
-- `PORT`: Override the default port (default: 5001 in Docker)
 
 ## Logging
 
@@ -222,6 +198,9 @@ If you encounter any issues or have questions, please file an issue on the GitHu
 
 ## Version History
 
+- 0.5.1: Remove docker functionality
+- 0.5.0: Cleanup codebase, remove old functionality
+- 0.4.4: Fix erratic notification issues
 - 0.4.2: Enhance monitoring + logging
 - 0.4.1: Validate Docker container image builds correctly, make CLI co-exist
 - 0.4.0: Add web interface to daemon + terminal mode

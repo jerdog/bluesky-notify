@@ -23,8 +23,6 @@
     <string>/Users/jerdog/Library/Logs/bluesky-notify.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>DOCKER_CONTAINER</key>
-        <string>false</string>
         <key>PATH</key>
         <string>/opt/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>

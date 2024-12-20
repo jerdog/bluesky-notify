@@ -237,23 +237,6 @@ let ws;
 let wsRetryCount = 0;
 const MAX_RETRIES = 5;
 
-// Check if we're running in Docker by looking at the hostname
-// Docker containers will have a hostname that's different from localhost/127.0.0.1
-const isDocker = !['localhost', '127.0.0.1'].includes(window.location.hostname);
-
-// Only initialize WebSocket and request notification permission in Docker
-if (isDocker) {
-    // Request notification permission on page load
-    if ("Notification" in window) {
-        if (Notification.permission !== "granted" && Notification.permission !== "denied") {
-            Notification.requestPermission().then(function (permission) {
-                if (permission === "granted") {
-                    console.log("Notification permission granted");
-                }
-            });
-        }
-    }
-
     // Initialize WebSocket connection
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

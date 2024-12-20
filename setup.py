@@ -4,7 +4,7 @@ from setuptools import setup, find_namespace_packages
 
 setup(
     name="bluesky-notify",
-    version="0.5.0",
+    version="0.5.1",
     description="Bluesky Notification Manager - Track and receive notifications from Bluesky accounts",
     author="Jeremy Meiss",
     author_email="jeremy.meiss@gmail.com",

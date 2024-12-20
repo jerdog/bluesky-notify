@@ -183,20 +183,10 @@ def index():
     """Serve the main page."""
     return render_template('index.html')
 
-@app.route('/health')
-def health_check():
-    """Health check endpoint for Docker container."""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat()
-    }), 200
-
 # Register blueprints
 app.register_blueprint(bp, url_prefix='/api')
 
 if __name__ == '__main__':
-    # Use port 3001 for local development, 5001 for Docker
-    is_docker = os.path.exists('/.dockerenv')
-    default_port = 5001 if is_docker else 3001
+    default_port = 5001
     port = int(os.environ.get('PORT', default_port))
     app.run(host='0.0.0.0', port=port, debug=False)

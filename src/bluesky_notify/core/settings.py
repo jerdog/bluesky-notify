@@ -7,9 +7,6 @@ import platform
 
 def get_port() -> int:
     """Get the appropriate port based on the environment."""
-    # Check if we're running in Docker
-    if os.environ.get('DOCKER_CONTAINER') == 'true':
-        return int(os.environ.get('PORT', 5001))  # Docker container port
 
     # For macOS, never use port 5000 as it's reserved for AirPlay
     if platform.system() == 'Darwin':
