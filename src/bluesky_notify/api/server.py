@@ -14,10 +14,27 @@ from bluesky_notify.core.database import (
 from bluesky_notify.core.config import Config, get_data_dir
 from bluesky_notify.core.logger import get_logger
 
+# Initialize WebSocket support only in Docker
+if os.getenv('DOCKER_CONTAINER'):
+    try:
+        from flask_sock import Sock
+        has_websocket = True
+    except ImportError:
+        has_websocket = False
+else:
+    has_websocket = False
+
 app = Flask(__name__,
            template_folder='../templates',
            static_folder='../static')
 CORS(app)
+
+# Initialize WebSocket only if available and in Docker
+if has_websocket:
+    sock = Sock(app)
+    ws_clients = set()
+    ws_lock = Lock()
+    notification_queue = Queue()
 
 # Load config and set database URI
 config = Config()
@@ -134,36 +151,6 @@ def broadcast_notification(title, message, url):
     if not has_websocket:
         return
 
-    notification = {
-        'type': 'notification',
-        'title': title,
-        'message': message,
-        'url': url
-    }
-    with ws_lock:
-        disconnected = set()
-        for client in ws_clients:
-            try:
-                client.send(json.dumps(notification))
-            except Exception:
-                disconnected.add(client)
-        # Clean up disconnected clients
-        for client in disconnected:
-            ws_clients.remove(client)
-
-if has_websocket:
-    @sock.route('/ws')
-    def ws_handler(ws):
-        """Handle WebSocket connections for real-time notifications."""
-        with ws_lock:
-            ws_clients.add(ws)
-        try:
-            while True:
-                # Keep connection alive and handle disconnection
-                ws.receive()
-        except Exception:
-            with ws_lock:
-                ws_clients.remove(ws)
 
 @app.route('/shutdown', methods=['GET'])
 def shutdown():
