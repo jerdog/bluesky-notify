@@ -20,7 +20,7 @@ document.addEventListener('wheel', function(){}, supportsPassive ? {passive: tru
 document.addEventListener('DOMContentLoaded', () => {
     loadAccounts();
     startPeriodicRefresh();
-    
+
     // Add account form submission
     const addAccountForm = document.getElementById('addAccountForm');
     if (addAccountForm) {
@@ -33,10 +33,10 @@ function showNotification(message, type = 'success') {
     const toastEl = document.getElementById('toast');
     const toastBody = toastEl.querySelector('.toast-body');
     const toastTitle = toastEl.querySelector('.toast-header strong');
-    
+
     toastTitle.textContent = type.charAt(0).toUpperCase() + type.slice(1);
     toastBody.textContent = message;
-    
+
     const toast = new bootstrap.Toast(toastEl);
     toast.show();
 }
@@ -48,12 +48,12 @@ async function loadAccounts() {
         if (!response.ok) {
             throw new Error('Failed to load accounts');
         }
-        
+
         const data = await response.json();
         const accounts = data.accounts || [];
         const accountsTable = document.getElementById('accountsTable');
         accountsTable.innerHTML = '';
-        
+
         if (accounts.length === 0) {
             accountsTable.innerHTML = `
                 <tr>
@@ -64,11 +64,11 @@ async function loadAccounts() {
             `;
             return;
         }
-        
+
         accounts.forEach(account => {
             const row = document.createElement('tr');
             row.dataset.handle = account.handle;
-            
+
             // Account info cell
             const accountCell = document.createElement('td');
             accountCell.innerHTML = `
@@ -79,7 +79,7 @@ async function loadAccounts() {
                     </div>
                 </div>
             `;
-            
+
             // Status cell
             const statusCell = document.createElement('td');
             statusCell.innerHTML = `
@@ -87,29 +87,18 @@ async function loadAccounts() {
                     ${account.is_active ? 'Active' : 'Inactive'}
                 </span>
             `;
-            
+
             // Desktop notifications cell
             const desktopCell = document.createElement('td');
             const desktopEnabled = account.notification_preferences?.desktop ?? false;
             desktopCell.innerHTML = `
                 <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch" data-type="desktop" 
-                           ${desktopEnabled ? 'checked' : ''} 
+                    <input class="form-check-input" type="checkbox" role="switch" data-type="desktop"
+                           ${desktopEnabled ? 'checked' : ''}
                            onchange="toggleNotification('${account.handle}', 'desktop', this.checked)">
                 </div>
             `;
-            
-            // Email notifications cell
-            const emailCell = document.createElement('td');
-            const emailEnabled = account.notification_preferences?.email ?? false;
-            emailCell.innerHTML = `
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch" data-type="email" 
-                           ${emailEnabled ? 'checked' : ''} 
-                           onchange="toggleNotification('${account.handle}', 'email', this.checked)">
-                </div>
-            `;
-            
+
             // Actions cell
             const actionsCell = document.createElement('td');
             actionsCell.innerHTML = `
@@ -117,13 +106,12 @@ async function loadAccounts() {
                     <i class="bi bi-trash"></i>
                 </button>
             `;
-            
+
             row.appendChild(accountCell);
             row.appendChild(statusCell);
             row.appendChild(desktopCell);
-            row.appendChild(emailCell);
             row.appendChild(actionsCell);
-            
+
             accountsTable.appendChild(row);
         });
     } catch (error) {
@@ -145,7 +133,6 @@ async function handleAddAccount(event) {
     const form = event.target;
     let handleValue = form.querySelector('#handle').value.trim();
     const desktopNotif = form.querySelector('#desktopNotif').checked;
-    const emailNotif = form.querySelector('#emailNotif').checked;
 
     // Remove @ if present and clean invisible characters
     if (handleValue.startsWith('@')) {
@@ -166,7 +153,7 @@ async function handleAddAccount(event) {
         showNotification('Please enter a valid Bluesky handle (e.g., user.bsky.social)', 'error');
         return;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/accounts`, {
             method: 'POST',
@@ -175,13 +162,12 @@ async function handleAddAccount(event) {
             },
             body: JSON.stringify({
                 handle: handleValue,
-                desktop: desktopNotif,
-                email: emailNotif
+                desktop: desktopNotif
             })
         });
 
         const data = await response.json();
-        
+
         if (!response.ok) {
             throw new Error(data.error || 'Failed to add account');
         }
@@ -207,11 +193,11 @@ async function toggleNotification(handle, type, enabled) {
                 [type]: enabled
             }),
         });
-        
+
         if (!response.ok) {
             throw new Error('Failed to update preferences');
         }
-        
+
         loadAccounts();
     } catch (error) {
         console.error('Error updating preferences:', error);
@@ -224,16 +210,16 @@ async function removeAccount(handle) {
     if (!confirm(`Are you sure you want to stop monitoring @${handle}?`)) {
         return;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/accounts/${handle}`, {
             method: 'DELETE',
         });
-        
+
         if (!response.ok) {
             throw new Error('Failed to remove account');
         }
-        
+
         loadAccounts();
     } catch (error) {
         console.error('Error removing account:', error);
@@ -272,28 +258,28 @@ if (isDocker) {
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
-        
+
         ws = new WebSocket(wsUrl);
-        
+
         ws.onopen = function() {
             console.log('WebSocket connected');
             wsRetryCount = 0;
         };
-        
+
         ws.onmessage = function(event) {
             const data = JSON.parse(event.data);
             if (data.type === 'notification' && Notification.permission === "granted") {
                 const notification = new Notification(data.title, {
                     body: data.message
                 });
-                
+
                 notification.onclick = function() {
                     window.open(data.url, '_blank');
                     notification.close();
                 };
             }
         };
-        
+
         ws.onclose = function() {
             console.log('WebSocket disconnected');
             if (wsRetryCount < MAX_RETRIES) {
@@ -301,7 +287,7 @@ if (isDocker) {
                 setTimeout(connectWebSocket, 1000 * Math.pow(2, wsRetryCount));
             }
         };
-        
+
         ws.onerror = function(error) {
             console.error('WebSocket error:', error);
         };

@@ -13,7 +13,7 @@ import traceback
 def get_log_dir() -> str:
     """Get the log directory path."""
     system = platform.system()
-    
+
     if system == 'Darwin':  # macOS
         # Use ~/Library/Logs for macOS
         log_dir = str(Path.home() / 'Library' / 'Logs')
@@ -25,18 +25,18 @@ def get_log_dir() -> str:
         else:
             log_dir = Path.home() / '.local' / 'share'
         log_dir = str(log_dir / 'bluesky-notify' / 'logs')
-    
+
     os.makedirs(log_dir, exist_ok=True)
     return log_dir
 
 def get_logger(name: str, log_level: str = None) -> logging.Logger:
     """
     Get a configured logger instance.
-    
+
     Args:
         name: The name of the logger
         log_level: Optional log level override (defaults to INFO)
-    
+
     Returns:
         A configured logger instance
     """
@@ -48,7 +48,7 @@ def get_logger(name: str, log_level: str = None) -> logging.Logger:
 
     # Get logger
     logger = logging.getLogger(name)
-    
+
     # Set log level
     level = getattr(logging, (log_level or 'INFO').upper())
     logger.setLevel(level)
@@ -58,7 +58,7 @@ def get_logger(name: str, log_level: str = None) -> logging.Logger:
 
     # Get log directory
     log_dir = get_log_dir()
-    
+
     # Test log directory is writable
     test_file = os.path.join(log_dir, '.test_write')
     try:
@@ -102,10 +102,10 @@ def get_logger(name: str, log_level: str = None) -> logging.Logger:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-        
+
         error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
         logger.error(f"Uncaught exception:\n{error_msg}")
-    
+
     sys.excepthook = handle_exception
 
     return logger
