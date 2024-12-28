@@ -102,8 +102,6 @@ def add_account():
     desktop = data.get('desktop', True)
 
     notifier = BlueSkyNotifier(app=app)
-    if not notifier.authenticate():
-        return jsonify({'error': 'Failed to authenticate with Bluesky'}), 401
 
     try:
         account_info = notifier.get_account_info(handle)

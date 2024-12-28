@@ -13,6 +13,7 @@ import platform
 import subprocess
 import shutil
 import ssl
+import requests
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from .database import (
@@ -520,7 +521,8 @@ end tell
         """Send notifications for new posts."""
         try:
             for post in posts:
-                post_id = post.get("post", {}).get("uri")
+                text = post.get("post", {}).get("record", {}).get("text", "")
+                post_id = post.get("post", {}).get("uri", "")
                 if not post_id:
                     continue
 
@@ -528,7 +530,7 @@ end tell
                 post_id = post_id.split('/')[-1]
 
                 title = f"New post from {account.display_name or account.handle}"
-                message = post.get("post", {}).get("text", "")
+                message = text[:200] + ("..." if len(text) > 200 else "")
                 url = f"https://bsky.app/profile/{account.handle}/post/{post_id}"
 
                 if await self._send_notification_async(title, message, url):
