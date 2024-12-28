@@ -2,7 +2,7 @@
 
 A cross-platform desktop notification system for Bluesky. Monitor and receive notifications from your favorite Bluesky accounts.
 
-[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/jerdog/bluesky-notify)
+[![Version](https://img.shields.io/badge/version-0.5.2-blue.svg)](https://github.com/jerdog/bluesky-notify)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/Flask-3.1.0-blue)](https://pypi.org/project/Flask/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -198,6 +198,7 @@ If you encounter any issues or have questions, please file an issue on the GitHu
 
 ## Version History
 
+- 0.5.2: Fixed weird error where text of notification wasn't being passed
 - 0.5.1: Remove docker functionality
 - 0.5.0: Cleanup codebase, remove old functionality
 - 0.4.4: Fix erratic notification issues
